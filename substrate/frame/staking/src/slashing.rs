@@ -57,17 +57,9 @@ use crate::{
 };
 use alloc::vec::Vec;
 use codec::{Decode, Encode, MaxEncodedLen};
-use frame_support::{
-	dispatch::WithPostDispatchInfo,
-	ensure,
-	pallet_prelude::{One, Weight},
-	traits::{Defensive, DefensiveSaturating, Get, Imbalance, OnUnbalanced},
-};
+use frame_support::{defensive, dispatch::WithPostDispatchInfo, ensure, pallet_prelude::{One, Weight}, traits::{Defensive, DefensiveSaturating, Get, Imbalance, OnUnbalanced}};
 use scale_info::TypeInfo;
-use sp_runtime::{
-	traits::{Saturating, Zero},
-	DispatchResult, RuntimeDebug,
-};
+use sp_runtime::{traits::{Saturating, Zero}, DispatchResult, RuntimeDebug, BoundedVec};
 use sp_staking::{
 	offence::{OffenceDetails, OffenceSeverity},
 	EraIndex, Page, SessionIndex, StakingInterface,
@@ -232,13 +224,14 @@ pub(crate) struct SlashParams<'a, T: 'a + Config> {
 /// event.
 #[derive(Encode, Decode, TypeInfo, MaxEncodedLen)]
 pub struct OffenceRecord<AccountId> {
-	// /// The stash account ID of the validator who committed the offence.
-	// pub validator_id: AccountId,
 	/// The account ID of the entity that reported the offence.
-	pub reporter_id: Option<AccountId>,
+	pub reporter: Option<AccountId>,
 
-	/// The session index in which the offence occurred.
-	pub offence_session: u32,
+	/// Era at which the offence was reported.
+	pub reported_era: EraIndex,
+
+	/// Era at which the offence actually occurred.
+	pub offence_era: EraIndex,
 
 	/// The specific page of the validator's exposure currently being processed.
 	///
@@ -252,116 +245,58 @@ pub struct OffenceRecord<AccountId> {
 
 	/// The fraction of the validator's stake to be slashed for this offence.
 	pub slash_fraction: Perbill,
-	// /// The portion of the validator's stake that is **liable to be slashed** for this offence.
-	// ///
-	// /// - If the validator's exposure spans multiple pages, this amount is only considered
-	// ///   for slashing **when processing the first page**.
-	// /// - This does **not** represent the validator's total stake, but rather the stake at risk
-	// ///   in this particular offence record.
-	// pub slashed_validator_stake: Balance,
 }
 
-pub(crate) fn process_offence<T: Config>(
-	offence_detail: OffenceDetails<T::AccountId, T::AccountId>,
-	slash_fraction: &Perbill,
-	slash_session: SessionIndex,
-	slash_page: Page,
-) -> Weight {
+pub(crate) fn process_offence<T: Config>(offender: &T::AccountId, offence_era: EraIndex, offence_record: OffenceRecord<T::AccountId>) -> Weight {
 	// todo(ank4n): bench
+
 	let reward_proportion = SlashRewardFraction::<T>::get();
-
-	let stash = offence_detail.offender.clone();
-
-	let invulnerables = Invulnerables::<T>::get();
-
-	// Skip if the validator is invulnerable.
-	if invulnerables.contains(&stash) {
-		return Weight::default()
-	}
-
-	let active_era = {
-		let active_era = ActiveEra::<T>::get();
-		if active_era.is_none() {
-			// This offence need not be re-submitted.
-			return Weight::default()
-		}
-		active_era.expect("value checked not to be `None`; qed").index
-	};
-	let active_era_start_session_index = ErasStartSessionIndex::<T>::get(active_era)
-		.unwrap_or_else(|| {
-			frame_support::print("Error: start_session_index must be set for current_era");
-			0
-		});
-
-	let window_start = active_era.saturating_sub(T::BondingDuration::get());
-
-	// Fast path for active-era report - most likely.
-	// `slash_session` cannot be in a future active era. It must be in `active_era` or
-	// before.
-	let slash_era = if slash_session >= active_era_start_session_index {
-		active_era
-	} else {
-		let eras = BondedEras::<T>::get();
-
-		// Reverse because it's more likely to find reports from recent eras.
-		match eras.iter().rev().find(|&(_, sesh)| sesh <= &slash_session) {
-			Some((slash_era, _)) => *slash_era,
-			// Before bonding period. defensive - should be filtered out.
-			None => return Weight::default(),
-		}
-	};
-
-	let maybe_exposure = EraInfo::<T>::get_paged_exposure(slash_era, &stash, slash_page);
+	let maybe_exposure = EraInfo::<T>::get_paged_exposure(offence_era, offender, offence_record.exposure_page);
 
 	if maybe_exposure.is_none() {
-		// defensive - should be filtered out.
+		// defensive - this can only happen if the offence was valid at the time of reporting but
+		// became too old at the time of computing and should be discarded.
 		return Weight::default()
 	}
 
 	let exposure = maybe_exposure.expect("value checked not to be `None`; qed");
-
 	let slash_defer_duration = T::SlashDeferDuration::get();
 
 	<Pallet<T>>::deposit_event(super::Event::<T>::SlashReported {
-		validator: stash.clone(),
-		fraction: *slash_fraction,
-		slash_era,
+		validator: offender.clone(),
+		fraction: offence_record.slash_fraction,
+		slash_era: offence_era,
 	});
 
+	let window_start = offence_record.reported_era.saturating_sub(T::BondingDuration::get());
+
 	let unapplied = compute_slash::<T>(SlashParams {
-		stash: &stash,
-		slash: *slash_fraction,
+		stash: offender,
+		slash: offence_record.slash_fraction,
 		exposure: &exposure,
-		slash_era,
+		slash_era: offence_era,
 		window_start,
-		now: active_era,
+		now: offence_record.reported_era,
 		reward_proportion,
 	});
 
 	if let Some(mut unapplied) = unapplied {
-		let nominators_len = unapplied.others.len() as u64;
-		let reporters_len = offence_detail.reporters.len() as u64;
-
-		{
-			let upper_bound = 1 /* Validator/NominatorSlashInEra */ + 2 /* fetch_spans */;
-			let rw = upper_bound + nominators_len * upper_bound;
-		}
-		unapplied.reporters = offence_detail.reporters.clone();
+		unapplied.reporter = offence_record.reporter;
 		if slash_defer_duration == 0 {
 			// Apply right away.
-			apply_slash::<T>(unapplied, slash_era);
+			apply_slash::<T>(unapplied, offence_era);
 		} else {
 			// Defer to end of some `slash_defer_duration` from now.
 			log!(
 				debug,
 				"deferring slash of {:?}% happened in {:?} (reported in {:?}) to {:?}",
-				slash_fraction,
-				slash_era,
-				active_era,
-				slash_era + slash_defer_duration + 1,
+				offence_record.slash_fraction,
+				offence_era,
+				offence_record.reported_era,
+				offence_era + slash_defer_duration + 1,
 			);
 			UnappliedSlashes::<T>::mutate(
-				slash_era.saturating_add(slash_defer_duration).saturating_add(One::one()),
+				offence_era.saturating_add(slash_defer_duration).saturating_add(One::one()),
 				move |for_later| for_later.push(unapplied),
 			);
 		}
@@ -380,7 +315,7 @@ pub(crate) fn process_offence<T: Config>(
 // TODO(ank4n): Refactor to handle one slash page properly.
 pub(crate) fn compute_slash<T: Config>(
 	params: SlashParams<T>,
-) -> Option<UnappliedSlash<T::AccountId, BalanceOf<T>>> {
+) -> Option<UnappliedSlash<T>> {
 	let mut reward_payout = Zero::zero();
 	let mut val_slashed = Zero::zero();
 
@@ -444,8 +379,8 @@ pub(crate) fn compute_slash<T: Config>(
 	Some(UnappliedSlash {
 		validator: params.stash.clone(),
 		own: val_slashed,
-		others: nominators_slashed,
-		reporters: Vec::new(),
+		others: BoundedVec::truncate_from(nominators_slashed),
+		reporter: None,
 		payout: reward_payout,
 	})
 }
@@ -788,7 +723,7 @@ pub fn do_slash<T: Config>(
 
 /// Apply a previously-unapplied slash.
 pub(crate) fn apply_slash<T: Config>(
-	unapplied_slash: UnappliedSlash<T::AccountId, BalanceOf<T>>,
+	unapplied_slash: UnappliedSlash<T>,
 	slash_era: EraIndex,
 ) {
 	let mut slashed_imbalance = NegativeImbalanceOf::<T>::zero();
@@ -812,7 +747,7 @@ pub(crate) fn apply_slash<T: Config>(
 		);
 	}
 
-	pay_reporters::<T>(reward_payout, slashed_imbalance, &unapplied_slash.reporters);
+	pay_reporters::<T>(reward_payout, slashed_imbalance, &unapplied_slash.reporter.map(|v| vec![v]).unwrap_or_default());
 }
 
 /// Apply a reward payout to some reporters, paying the rewards out of the slashed imbalance.

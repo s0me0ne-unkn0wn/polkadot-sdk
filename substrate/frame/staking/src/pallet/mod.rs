@@ -705,7 +705,7 @@ pub mod pallet {
 		_,
 		Twox64Concat,
 		EraIndex,
-		Vec<UnappliedSlash<T::AccountId, BalanceOf<T>>>,
+		Vec<UnappliedSlash<T>>,
 		ValueQuery,
 	>;
 

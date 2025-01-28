@@ -1544,31 +1544,36 @@ where
 			}
 		};
 
+		let invulnerables = Invulnerables::<T>::get();
+
 		for (details, slash_fraction) in offenders.iter().zip(slash_fractions) {
 			let validator = &details.offender;
+			// Skip if the validator is invulnerable.
+			if invulnerables.contains(&validator) {
+				return Weight::default()
+			}
+
 			let pages = <EraInfo<T>>::get_page_count(offence_era, validator);
+			// build an offence record
+			let offence_record = OffenceRecord {
+				reporter: details.reporters.first().cloned(),
+				reported_era: active_era,
+				offence_era,
+				exposure_page: pages - 1, // Process last page first.
+				slash_fraction: *slash_fraction,
+			};
 
 			OffenceQueue::<T>::mutate(offence_era, validator, |entry| {
 				match entry {
 					Some(existing) => {
 						// Overwrite only if the new `slash_fraction` is higher.
 						if *slash_fraction > existing.slash_fraction {
-							*existing = OffenceRecord {
-								reporter_id: details.reporters.first().cloned(),
-								offence_session: slash_session,
-								exposure_page: pages - 1, // Process last page first.
-								slash_fraction: *slash_fraction,
-							};
+							*existing = offence_record;
 						}
 					},
 					None => {
 						// Insert a new record if none exists.
-						*entry = Some(OffenceRecord {
-							reporter_id: details.reporters.first().cloned(),
-							offence_session: slash_session,
-							exposure_page: pages - 1,
-							slash_fraction: *slash_fraction,
-						});
+						*entry = Some(offence_record);
 					},
 				}
 			});
