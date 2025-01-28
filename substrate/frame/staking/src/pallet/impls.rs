@@ -1510,7 +1510,6 @@ where
 		// SlashDeferDuration.
 
 		// todo(ank4n): Benchmark this properly.
-		let mut consumed_weight = Weight::from_parts(0, 0);
 
 		// Simple: One offence processed per block.
 		// Complex: Based on exposure page size, multiple offences processed per block.
@@ -1520,7 +1519,7 @@ where
 			let active_era = ActiveEra::<T>::get();
 			if active_era.is_none() {
 				// This offence need not be re-submitted.
-				return consumed_weight
+				return Weight::default()
 			}
 			active_era.expect("value checked not to be `None`; qed").index
 		};
@@ -1541,7 +1540,7 @@ where
 			match eras.iter().rev().find(|&(_, sesh)| sesh <= &slash_session) {
 				Some((slash_era, _)) => *slash_era,
 				// Before bonding period. defensive - should be filtered out.
-				None => return consumed_weight,
+				None => return Weight::default(),
 			}
 		};
 
@@ -1575,7 +1574,7 @@ where
 			});
 		}
 
-		consumed_weight
+		Weight::default()
 	}
 }
 

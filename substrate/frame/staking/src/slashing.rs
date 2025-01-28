@@ -269,27 +269,21 @@ pub(crate) fn process_offence<T: Config>(
 ) -> Weight {
 	// todo(ank4n): bench
 	let reward_proportion = SlashRewardFraction::<T>::get();
-	let mut consumed_weight = Weight::from_parts(0, 0);
-	let mut add_db_reads_writes = |reads, writes| {
-		consumed_weight += T::DbWeight::get().reads_writes(reads, writes);
-	};
 
 	let stash = offence_detail.offender.clone();
 
 	let invulnerables = Invulnerables::<T>::get();
-	add_db_reads_writes(1, 0);
 
 	// Skip if the validator is invulnerable.
 	if invulnerables.contains(&stash) {
-		return consumed_weight;
+		return Weight::default()
 	}
 
 	let active_era = {
 		let active_era = ActiveEra::<T>::get();
-		add_db_reads_writes(1, 0);
 		if active_era.is_none() {
 			// This offence need not be re-submitted.
-			return consumed_weight
+			return Weight::default()
 		}
 		active_era.expect("value checked not to be `None`; qed").index
 	};
@@ -298,7 +292,6 @@ pub(crate) fn process_offence<T: Config>(
 			frame_support::print("Error: start_session_index must be set for current_era");
 			0
 		});
-	add_db_reads_writes(1, 0);
 
 	let window_start = active_era.saturating_sub(T::BondingDuration::get());
 
@@ -309,24 +302,20 @@ pub(crate) fn process_offence<T: Config>(
 		active_era
 	} else {
 		let eras = BondedEras::<T>::get();
-		add_db_reads_writes(1, 0);
 
 		// Reverse because it's more likely to find reports from recent eras.
 		match eras.iter().rev().find(|&(_, sesh)| sesh <= &slash_session) {
 			Some((slash_era, _)) => *slash_era,
 			// Before bonding period. defensive - should be filtered out.
-			None => return consumed_weight,
+			None => return Weight::default(),
 		}
 	};
 
-	add_db_reads_writes(1, 1);
-
 	let maybe_exposure = EraInfo::<T>::get_paged_exposure(slash_era, &stash, slash_page);
-	add_db_reads_writes(2, 0);
 
 	if maybe_exposure.is_none() {
 		// defensive - should be filtered out.
-		return consumed_weight
+		return Weight::default()
 	}
 
 	let exposure = maybe_exposure.expect("value checked not to be `None`; qed");
@@ -356,20 +345,11 @@ pub(crate) fn process_offence<T: Config>(
 		{
 			let upper_bound = 1 /* Validator/NominatorSlashInEra */ + 2 /* fetch_spans */;
 			let rw = upper_bound + nominators_len * upper_bound;
-			add_db_reads_writes(rw, rw);
 		}
 		unapplied.reporters = offence_detail.reporters.clone();
 		if slash_defer_duration == 0 {
 			// Apply right away.
 			apply_slash::<T>(unapplied, slash_era);
-			{
-				let slash_cost = (6, 5);
-				let reward_cost = (2, 2);
-				add_db_reads_writes(
-					(1 + nominators_len) * slash_cost.0 + reward_cost.0 * reporters_len,
-					(1 + nominators_len) * slash_cost.1 + reward_cost.1 * reporters_len,
-				);
-			}
 		} else {
 			// Defer to end of some `slash_defer_duration` from now.
 			log!(
@@ -384,13 +364,11 @@ pub(crate) fn process_offence<T: Config>(
 				slash_era.saturating_add(slash_defer_duration).saturating_add(One::one()),
 				move |for_later| for_later.push(unapplied),
 			);
-			add_db_reads_writes(1, 1);
 		}
 	} else {
-		add_db_reads_writes(4 /* fetch_spans */, 5 /* kick_out_if_recent */)
 	}
 
-	consumed_weight
+	Weight::default()
 }
 
 /// Computes a slash of a validator and nominators. It returns an unapplied
