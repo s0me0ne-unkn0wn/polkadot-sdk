@@ -235,7 +235,7 @@ pub struct OffenceRecord<AccountId> {
 	// /// The stash account ID of the validator who committed the offence.
 	// pub validator_id: AccountId,
 	/// The account ID of the entity that reported the offence.
-	pub reporter_id: AccountId,
+	pub reporter_id: Option<AccountId>,
 
 	/// The session index in which the offence occurred.
 	pub offence_session: u32,

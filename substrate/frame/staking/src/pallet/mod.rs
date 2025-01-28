@@ -670,28 +670,33 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type CanceledSlashPayout<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
-	/// Stores reported offences in a queue until they are processed in the subsequent blocks.
+	/// Stores reported offences in a queue until they are processed in subsequent blocks.
 	///
-	/// When an offence is reported, it is broken down into pages and added to this queue.
-	/// Each offence is processed sequentially, computing the associated slashes in the process.
-	/// The resulting slashes are then stored in `UnappliedSlashes` and applied
-	/// in a future era determined by `SlashDeferDuration`.
+	/// Each offence is recorded under the corresponding era index and the offending validator's
+	/// account. If an offence spans multiple pages, only one page is processed at a time. Offences
+	/// are handled sequentially, with their associated slashes computed and stored in
+	/// `UnappliedSlashes`. These slashes are then applied in a future era as determined by
+	/// `SlashDeferDuration`.
 	///
-	/// The key is an integer that acts as a self incrementing index as long as the queue is not
-	/// empty and resets to 0 when the queue is empty.
+	/// Any offences tied to an era older than `BondingDuration` are automatically dropped.
+	/// Processing always prioritizes the oldest era first.
 	#[pallet::storage]
-	pub type OffenceQueue<T: Config> =
-		StorageMap<_, Twox64Concat, T::AccountId, slashing::OffenceRecord<T::AccountId>>;
+	pub type OffenceQueue<T: Config> = StorageDoubleMap<
+		_,
+		Twox64Concat,
+		EraIndex,
+		Twox64Concat,
+		T::AccountId,
+		slashing::OffenceRecord<T::AccountId>,
+	>;
 
-	/// Tracks the number of offence records (divided into pages) currently awaiting processing in
-	/// the queue.
+	/// Tracks the number of offence records (divided into pages) currently awaiting processing for
+	/// the oldest available era.
 	///
-	/// Since a single offence record can span multiple pages, the total number of items
-	/// in the `OffenceQueue` alone does not provide an accurate count. This counter
-	/// ensures proper tracking of pending offences, preventing overflows and ensuring
-	/// bounded processing.
+	/// Since a single offence may span multiple pages, and they are further split into pages, the
+	/// `OffenceQueue` count alone is insufficient for accurate tracking.
 	#[pallet::storage]
-	pub type OffenceQueueCounter<T: Config> = StorageValue<_, u32>;
+	pub type OffenceQueueEraHead<T> = StorageValue<_, (u32, u32)>;
 
 	/// All unapplied slashes that are queued for later.
 	#[pallet::storage]

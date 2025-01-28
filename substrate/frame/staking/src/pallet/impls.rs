@@ -59,6 +59,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 
 use super::pallet::*;
 
+use crate::slashing::OffenceRecord;
 #[cfg(feature = "try-runtime")]
 use frame_support::ensure;
 #[cfg(any(test, feature = "try-runtime"))]
@@ -1511,28 +1512,69 @@ where
 		// todo(ank4n): Benchmark this properly.
 		let mut consumed_weight = Weight::from_parts(0, 0);
 
-		// for each offender, get multiple pages of exposure.
-		// Store in offence queue,
-		// - validator,
-		// - reporter,
-		// - slash target count
-		// - exposure page,
-		// - slash_fraction,
-		// - slash_session
-		// - validator_stake: BalanceOf<T>
-
 		// Simple: One offence processed per block.
 		// Complex: Based on exposure page size, multiple offences processed per block.
 
-		// Find era
-		let offence_era = 1;
+		// Find the era to which offence belongs.
+		let active_era = {
+			let active_era = ActiveEra::<T>::get();
+			if active_era.is_none() {
+				// This offence need not be re-submitted.
+				return consumed_weight
+			}
+			active_era.expect("value checked not to be `None`; qed").index
+		};
+		let active_era_start_session_index = ErasStartSessionIndex::<T>::get(active_era)
+			.unwrap_or_else(|| {
+				frame_support::print("Error: start_session_index must be set for current_era");
+				0
+			});
+
+		// Fast path for active-era report - most likely.
+		// `slash_session` cannot be in a future active era. It must be in `active_era` or before.
+		let offence_era = if slash_session >= active_era_start_session_index {
+			active_era
+		} else {
+			let eras = BondedEras::<T>::get();
+
+			// Reverse because it's more likely to find reports from recent eras.
+			match eras.iter().rev().find(|&(_, sesh)| sesh <= &slash_session) {
+				Some((slash_era, _)) => *slash_era,
+				// Before bonding period. defensive - should be filtered out.
+				None => return consumed_weight,
+			}
+		};
 
 		for (details, slash_fraction) in offenders.iter().zip(slash_fractions) {
 			let validator = &details.offender;
-			let exposure_meta = <ErasStakersOverview<T>>::get(&offence_era, validator);
+			let pages = <EraInfo<T>>::get_page_count(offence_era, validator);
 
-			// we will slash the validator when processing the last page.
+			OffenceQueue::<T>::mutate(offence_era, validator, |entry| {
+				match entry {
+					Some(existing) => {
+						// Overwrite only if the new `slash_fraction` is higher.
+						if *slash_fraction > existing.slash_fraction {
+							*existing = OffenceRecord {
+								reporter_id: details.reporters.first().cloned(),
+								offence_session: slash_session,
+								exposure_page: pages - 1, // Process last page first.
+								slash_fraction: *slash_fraction,
+							};
+						}
+					},
+					None => {
+						// Insert a new record if none exists.
+						*entry = Some(OffenceRecord {
+							reporter_id: details.reporters.first().cloned(),
+							offence_session: slash_session,
+							exposure_page: pages - 1,
+							slash_fraction: *slash_fraction,
+						});
+					},
+				}
+			});
 		}
+
 		consumed_weight
 	}
 }
