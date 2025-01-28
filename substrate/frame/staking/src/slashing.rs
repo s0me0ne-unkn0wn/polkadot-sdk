@@ -49,7 +49,12 @@
 //!
 //! Based on research at <https://research.web3.foundation/en/latest/polkadot/slashing/npos.html>
 
-use crate::{asset, log, pallet::pallet::BondedEras, ActiveEra, BalanceOf, Config, DisabledValidators, DisablingStrategy, EraInfo, ErasStartSessionIndex, Error, Exposure, Invulnerables, NegativeImbalanceOf, NominatorSlashInEra, PagedExposure, Pallet, Perbill, SessionInterface, SlashRewardFraction, SpanSlash, UnappliedSlash, UnappliedSlashes, ValidatorSlashInEra};
+use crate::{
+	asset, log, pallet::pallet::BondedEras, ActiveEra, BalanceOf, Config, DisabledValidators,
+	DisablingStrategy, EraInfo, ErasStartSessionIndex, Error, Exposure, Invulnerables,
+	NegativeImbalanceOf, NominatorSlashInEra, PagedExposure, Pallet, Perbill, SessionInterface,
+	SlashRewardFraction, SpanSlash, UnappliedSlash, UnappliedSlashes, ValidatorSlashInEra,
+};
 use alloc::vec::Vec;
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
@@ -61,7 +66,7 @@ use frame_support::{
 use scale_info::TypeInfo;
 use sp_runtime::{
 	traits::{Saturating, Zero},
-	PerBill, DispatchResult, RuntimeDebug,
+	DispatchResult, RuntimeDebug,
 };
 use sp_staking::{
 	offence::{OffenceDetails, OffenceSeverity},
@@ -223,12 +228,12 @@ pub(crate) struct SlashParams<'a, T: 'a + Config> {
 	pub(crate) reward_proportion: Perbill,
 }
 
-/// Represents an offence record within the staking system, capturing details about a slashing event.
+/// Represents an offence record within the staking system, capturing details about a slashing
+/// event.
 #[derive(Encode, Decode, TypeInfo, MaxEncodedLen)]
-pub struct OffenceRecord<AccountId, Balance> {
+pub struct OffenceRecord<AccountId> {
 	// /// The stash account ID of the validator who committed the offence.
 	// pub validator_id: AccountId,
-
 	/// The account ID of the entity that reported the offence.
 	pub reporter_id: AccountId,
 
@@ -247,7 +252,6 @@ pub struct OffenceRecord<AccountId, Balance> {
 
 	/// The fraction of the validator's stake to be slashed for this offence.
 	pub slash_fraction: Perbill,
-
 	// /// The portion of the validator's stake that is **liable to be slashed** for this offence.
 	// ///
 	// /// - If the validator's exposure spans multiple pages, this amount is only considered
@@ -317,8 +321,7 @@ pub(crate) fn process_offence<T: Config>(
 
 	add_db_reads_writes(1, 1);
 
-	let maybe_exposure =
-		EraInfo::<T>::get_paged_exposure(slash_era, &stash, slash_page);
+	let maybe_exposure = EraInfo::<T>::get_paged_exposure(slash_era, &stash, slash_page);
 	add_db_reads_writes(2, 0);
 
 	if maybe_exposure.is_none() {

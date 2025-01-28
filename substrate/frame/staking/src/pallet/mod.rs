@@ -681,7 +681,7 @@ pub mod pallet {
 	/// empty and resets to 0 when the queue is empty.
 	#[pallet::storage]
 	pub type OffenceQueue<T: Config> =
-		StorageMap<_, Twox64Concat, T::AccountId, slashing::OffenceRecord>;
+		StorageMap<_, Twox64Concat, T::AccountId, slashing::OffenceRecord<T::AccountId>>;
 
 	/// Tracks the number of offence records (divided into pages) currently awaiting processing in
 	/// the queue.
@@ -691,7 +691,7 @@ pub mod pallet {
 	/// ensures proper tracking of pending offences, preventing overflows and ensuring
 	/// bounded processing.
 	#[pallet::storage]
-	pub type OffenceQueueCounter<T: Config> = StorageValue<_, Twox64Concat, u32>;
+	pub type OffenceQueueCounter<T: Config> = StorageValue<_, u32>;
 
 	/// All unapplied slashes that are queued for later.
 	#[pallet::storage]
