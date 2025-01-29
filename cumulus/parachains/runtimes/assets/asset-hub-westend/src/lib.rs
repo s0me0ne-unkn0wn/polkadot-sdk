@@ -129,7 +129,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: alloc::borrow::Cow::Borrowed("westmint"),
 	impl_name: alloc::borrow::Cow::Borrowed("westmint"),
 	authoring_version: 1,
-	spec_version: 1_017_006,
+	spec_version: 1_017_007,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 16,
@@ -2191,6 +2191,10 @@ impl_runtime_apis! {
 
 		fn block_gas_limit() -> U256 {
 			Revive::evm_block_gas_limit()
+		}
+
+		fn gas_price() -> U256 {
+			Revive::evm_gas_price()
 		}
 
 		fn nonce(address: H160) -> Nonce {
