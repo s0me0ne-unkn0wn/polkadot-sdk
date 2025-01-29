@@ -46,12 +46,12 @@ type CallOf<T> = <T as frame_system::Config>::RuntimeCall;
 
 /// The EVM gas price.
 /// This constant is used by the proxy to advertise it via the eth_gas_price RPC.
-/// We set the constant to 2.5 Gwei.
+/// Value is set to 20 Gwei a sensible gas price based on Ethereum mainnet averages.
 ///
 /// We use a fixed value for the gas price.
 /// This let us calculate the gas estimate for a transaction with the formula:
 /// `estimate_gas = substrate_fee / gas_price`.
-pub(crate) const GAS_PRICE: u32 = 2_500_000_000u32;
+pub(crate) const GAS_PRICE: u64 = 20_000_000_000u64;
 
 /// Wraps [`generic::UncheckedExtrinsic`] to support checking unsigned
 /// [`crate::Call::eth_transact`] extrinsic.
