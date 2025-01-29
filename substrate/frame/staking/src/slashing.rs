@@ -60,10 +60,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{defensive, dispatch::WithPostDispatchInfo, ensure, pallet_prelude::{One, Weight}, traits::{Defensive, DefensiveSaturating, Get, Imbalance, OnUnbalanced}};
 use scale_info::TypeInfo;
 use sp_runtime::{traits::{Saturating, Zero}, DispatchResult, RuntimeDebug, BoundedVec};
-use sp_staking::{
-	offence::{OffenceDetails, OffenceSeverity},
-	EraIndex, Page, SessionIndex, StakingInterface,
-};
+use sp_staking::{offence::{OffenceDetails, OffenceSeverity}, EraIndex, Page, SessionIndex, StakingInterface, ExposurePage};
 
 /// The proportion of the slashing reward to be paid out on the first slashing detection.
 /// This is f_1 in the paper.
@@ -208,7 +205,7 @@ pub(crate) struct SlashParams<'a, T: 'a + Config> {
 	/// The proportion of the slash.
 	pub(crate) slash: Perbill,
 	/// The exposure of the stash and all nominators.
-	pub(crate) exposure: &'a PagedExposure<T::AccountId, BalanceOf<T>>,
+	pub(crate) exposure: &'a ExposurePage<T::AccountId, BalanceOf<T>>,
 	/// The era where the offence occurred.
 	pub(crate) slash_era: EraIndex,
 	/// The first era in the current bonding period.
@@ -301,6 +298,7 @@ pub(crate) fn process_offence<T: Config>(offender: &T::AccountId, offence_era: E
 			);
 		}
 	} else {
+		// bench path
 	}
 
 	Weight::default()
@@ -322,8 +320,8 @@ pub(crate) fn compute_slash<T: Config>(
 	// is the slash amount here a maximum for the era?
 	// todo(ank4n): this is not correct. Validator slash should be slashed only once.
 	// find a good way to handle this.
-	let own_slash = params.slash * params.exposure.exposure_metadata.own;
-	if params.slash * params.exposure.exposure_page.page_total == Zero::zero() {
+	let own_slash = params.slash; // fixme * params.exposure.exposure_metadata.own;
+	if params.slash * params.exposure.page_total == Zero::zero() {
 		// kick out the validator even if they won't be slashed,
 		// as long as the misbehavior is from their most recent slashing span.
 		kick_out_if_recent::<T>(params);
@@ -468,8 +466,8 @@ fn slash_nominators<T: Config>(
 ) -> BalanceOf<T> {
 	let mut reward_payout = Zero::zero();
 
-	nominators_slashed.reserve(params.exposure.exposure_page.others.len());
-	for nominator in &params.exposure.exposure_page.others {
+	nominators_slashed.reserve(params.exposure.others.len());
+	for nominator in &params.exposure.others {
 		let stash = &nominator.who;
 		let mut nom_slashed = Zero::zero();
 
