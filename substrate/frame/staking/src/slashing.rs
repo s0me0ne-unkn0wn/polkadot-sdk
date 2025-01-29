@@ -270,7 +270,7 @@ pub(crate) fn process_offence<T: Config>(offender: &T::AccountId, offence_era: E
 	let unapplied = compute_slash::<T>(SlashParams {
 		stash: offender,
 		slash: offence_record.slash_fraction,
-		exposure: &exposure.exposure_page,
+		exposure: &exposure,
 		slash_era: offence_era,
 		window_start,
 		now: offence_record.reported_era,
@@ -320,7 +320,7 @@ pub(crate) fn compute_slash<T: Config>(
 	// is the slash amount here a maximum for the era?
 	// todo(ank4n): this is not correct. Validator slash should be slashed only once.
 	// find a good way to handle this.
-	let own_slash = params.slash * BalanceOf::<T>::from(2000u32); // fixme * params.exposure.exposure_metadata.own;
+	let own_slash = params.slash; // fixme * params.exposure.exposure_metadata.own;
 	if params.slash * params.exposure.page_total == Zero::zero() {
 		// kick out the validator even if they won't be slashed,
 		// as long as the misbehavior is from their most recent slashing span.
