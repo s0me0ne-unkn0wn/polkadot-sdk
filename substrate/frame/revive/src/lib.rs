@@ -1316,9 +1316,9 @@ where
 		Self::convert_native_to_evm(T::Currency::reducible_balance(&account, Preserve, Polite))
 	}
 
-	/// Convert an EVM fee into a gas value, using the fixed `GAS_PRICE`.
+	/// Convert an substrate fee into a gas value, using the fixed `GAS_PRICE`.
 	/// The gas is calculated as `fee / GAS_PRICE`, rounded up to the nearest integer.
-	pub fn evm_fee_to_gas(fee: BalanceOf<T>) -> U256 {
+	fn evm_fee_to_gas(fee: BalanceOf<T>) -> U256 {
 		let fee = Self::convert_native_to_evm(fee);
 		let gas_price = GAS_PRICE.into();
 		let (quotient, remainder) = fee.div_mod(gas_price);
@@ -1329,6 +1329,13 @@ where
 		}
 	}
 
+	/// Convert a gas value into a substrate fee
+	fn gas_to_fee(gas: U256, gas_price: U256) -> Result<BalanceOf<T>, Error<T>> {
+		let fee = gas.saturating_mul(gas_price);
+		Self::convert_evm_to_native(fee, ConversionPrecision::RoundUp)
+	}
+
+	/// Get the block gas limit.
 	pub fn evm_block_gas_limit() -> U256 {
 		let max_block_weight = T::BlockWeights::get()
 			.get(DispatchClass::Normal)
@@ -1337,6 +1344,11 @@ where
 
 		let fee = T::WeightPrice::convert(max_block_weight);
 		Self::evm_fee_to_gas(fee)
+	}
+
+	/// Get the gas price.
+	pub fn evm_gas_price() -> U256 {
+		GAS_PRICE.into()
 	}
 
 	/// A generalized version of [`Self::upload_code`].
@@ -1409,7 +1421,10 @@ where
 
 		let (quotient, remainder) = value.div_mod(T::NativeToEthRatio::get().into());
 		match (precision, remainder.is_zero()) {
-			(ConversionPrecision::Exact, false) => Err(Error::<T>::DecimalPrecisionLoss),
+			(ConversionPrecision::Exact, false) => {
+				log::error!(target: LOG_TARGET, "Precision loss converting EVM to native: {value:?}");
+				Err(Error::<T>::DecimalPrecisionLoss)
+			},
 			(_, true) => quotient.try_into().map_err(|_| Error::<T>::BalanceConversionFailed),
 			(_, false) => quotient
 				.saturating_add(U256::one())
@@ -1448,6 +1463,9 @@ sp_api::decl_runtime_apis! {
 
 		/// Returns the free balance of the given `[H160]` address, using EVM decimals.
 		fn balance(address: H160) -> U256;
+
+		/// Returns the gas price.
+		fn gas_price() -> U256;
 
 		/// Returns the nonce of the given `[H160]` address.
 		fn nonce(address: H160) -> Nonce;

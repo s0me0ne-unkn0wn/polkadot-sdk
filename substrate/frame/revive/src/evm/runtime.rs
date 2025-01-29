@@ -46,16 +46,12 @@ type CallOf<T> = <T as frame_system::Config>::RuntimeCall;
 
 /// The EVM gas price.
 /// This constant is used by the proxy to advertise it via the eth_gas_price RPC.
+/// We set the constant to 2.5 Gwei.
 ///
 /// We use a fixed value for the gas price.
 /// This let us calculate the gas estimate for a transaction with the formula:
 /// `estimate_gas = substrate_fee / gas_price`.
-///
-/// The chosen constant value is:
-/// - Not too high, ensuring the gas value is large enough (at least 7 digits) to encode the
-///   ref_time, proof_size, and deposit into the less significant (6 lower) digits of the gas value.
-/// - Not too low, enabling users to adjust the gas price to define a tip.
-pub const GAS_PRICE: u32 = 1_000u32;
+pub(crate) const GAS_PRICE: u32 = 2_500_000_000u32;
 
 /// Wraps [`generic::UncheckedExtrinsic`] to support checking unsigned
 /// [`crate::Call::eth_transact`] extrinsic.
@@ -368,22 +364,11 @@ pub trait EthExtra {
 
 		let nonce = nonce.unwrap_or_default().try_into().map_err(|_| InvalidTransaction::Call)?;
 
-		// Fees calculated with the fixed `GAS_PRICE`
-		// When we dry-run the transaction, we set the gas to `fee / GAS_PRICE`
-		let eth_fee_no_tip = U256::from(GAS_PRICE)
-			.saturating_mul(gas)
-			.try_into()
+		let eth_fee_no_tip = Pallet::<Self::Config>::gas_to_fee(gas, GAS_PRICE.into())
 			.map_err(|_| InvalidTransaction::Call)?;
 
-		// Fees calculated from the gas and gas_price of the transaction.
-		let eth_fee = Pallet::<Self::Config>::convert_evm_to_native(
-			U256::from(gas_price.unwrap_or_default()).saturating_mul(gas),
-			ConversionPrecision::RoundUp,
-		)
-		.map_err(|err| {
-			log::debug!(target: LOG_TARGET, "Failed to compute eth_fee: {err:?}");
-			InvalidTransaction::Call
-		})?;
+		let eth_fee = Pallet::<Self::Config>::gas_to_fee(gas, gas_price.unwrap_or_default())
+			.map_err(|_| InvalidTransaction::Call)?;
 
 		let info = call.get_dispatch_info();
 		let function: CallOf<Self::Config> = call.into();
