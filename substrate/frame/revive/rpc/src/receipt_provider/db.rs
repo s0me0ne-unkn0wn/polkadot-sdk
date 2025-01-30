@@ -133,7 +133,7 @@ impl ReceiptProvider for DBReceiptProvider {
 		let block = self.block_provider.block_by_hash(block_hash).await.ok()??;
 		let (_, receipt) = self
 			.receipt_extractor
-			.extract_receipts_from_transaction(&block, transaction_index)
+			.extract_from_transaction(&block, transaction_index)
 			.await
 			.ok()?;
 		Some(receipt)
@@ -145,7 +145,7 @@ impl ReceiptProvider for DBReceiptProvider {
 		let block = self.block_provider.block_by_hash(&block_hash).await.ok()??;
 		let (_, receipt) = self
 			.receipt_extractor
-			.extract_receipts_from_transaction(&block, transaction_index)
+			.extract_from_transaction(&block, transaction_index)
 			.await
 			.ok()?;
 		Some(receipt)
@@ -171,7 +171,7 @@ impl ReceiptProvider for DBReceiptProvider {
 		let block = self.block_provider.block_by_hash(&block_hash).await.ok()??;
 		let (signed_tx, _) = self
 			.receipt_extractor
-			.extract_receipts_from_transaction(&block, transaction_index)
+			.extract_from_transaction(&block, transaction_index)
 			.await
 			.ok()?;
 		Some(signed_tx)

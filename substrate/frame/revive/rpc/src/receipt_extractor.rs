@@ -46,7 +46,7 @@ impl ReceiptExtractor {
 	}
 
 	/// Extract a [`TransactionSigned`] and a [`ReceiptInfo`] and  from an extrinsic.
-	pub async fn extract_receipt_from_extrinsic(
+	pub async fn extract_from_extrinsic(
 		&self,
 		block: &SubstrateBlock,
 		ext: subxt::blocks::ExtrinsicDetails<SrcChainConfig, subxt::OnlineClient<SrcChainConfig>>,
@@ -135,7 +135,7 @@ impl ReceiptExtractor {
 	}
 
 	///  Extract receipts from block.
-	pub async fn extract_receipts_from_block(
+	pub async fn extract_from_block(
 		&self,
 		block: &SubstrateBlock,
 	) -> Result<Vec<(TransactionSigned, ReceiptInfo)>, ClientError> {
@@ -150,9 +150,7 @@ impl ReceiptExtractor {
 		});
 
 		stream::iter(extrinsics)
-			.map(|(ext, call)| async move {
-				self.extract_receipt_from_extrinsic(block, ext, call).await
-			})
+			.map(|(ext, call)| async move { self.extract_from_extrinsic(block, ext, call).await })
 			.buffer_unordered(10)
 			.collect::<Vec<Result<_, _>>>()
 			.await
@@ -161,7 +159,7 @@ impl ReceiptExtractor {
 	}
 
 	///  Extract receipt from transaction
-	pub async fn extract_receipts_from_transaction(
+	pub async fn extract_from_transaction(
 		&self,
 		block: &SubstrateBlock,
 		transaction_index: usize,
@@ -175,6 +173,6 @@ impl ReceiptExtractor {
 		let call = ext
 			.as_extrinsic::<EthTransact>()?
 			.ok_or_else(|| ClientError::EthExtrinsicNotFound)?;
-		self.extract_receipt_from_extrinsic(block, ext, call).await
+		self.extract_from_extrinsic(block, ext, call).await
 	}
 }

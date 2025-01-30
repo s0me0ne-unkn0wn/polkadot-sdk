@@ -344,8 +344,7 @@ impl Client {
 		spawn_handle.spawn("subscribe-blocks", None, async move {
 			let res = client
 				.subscribe_new_blocks(SubscriptionType::BestBlocks, |block| async {
-					let receipts =
-						client.receipt_extractor.extract_receipts_from_block(&block).await?;
+					let receipts = client.receipt_extractor.extract_from_block(&block).await?;
 
 					client.receipt_provider.insert(&block.hash(), &receipts).await;
 					if let Some(pruned) = client.block_provider.cache_block(block).await {
@@ -370,11 +369,9 @@ impl Client {
 		let new_blocks_fut =
 			self.subscribe_new_blocks(SubscriptionType::FinalizedBlocks, |block| async move {
 				let receipts =
-					self.receipt_extractor.extract_receipts_from_block(&block).await.inspect_err(
-						|err| {
-							log::error!(target: LOG_TARGET, "Failed to extract receipts from block: {err:?}");
-						},
-					)?;
+					self.receipt_extractor.extract_from_block(&block).await.inspect_err(|err| {
+						log::error!(target: LOG_TARGET, "Failed to extract receipts from block: {err:?}");
+					})?;
 				self.receipt_provider.insert(&block.hash(), &receipts).await;
 				Ok(())
 			});
@@ -382,7 +379,7 @@ impl Client {
 		let Some(oldest_block) = oldest_block else { return new_blocks_fut.await };
 
 		let old_blocks_fut = self.subscribe_past_blocks(|block| async move {
-			let receipts = self.receipt_extractor.extract_receipts_from_block(&block).await?;
+			let receipts = self.receipt_extractor.extract_from_block(&block).await?;
 			self.receipt_provider.insert(&block.hash(), &receipts).await;
 			if block.number() == oldest_block {
 				Ok(ControlFlow::Break(()))
@@ -677,11 +674,7 @@ impl Client {
 		let state_root = header.state_root.0.into();
 		let extrinsics_root = header.extrinsics_root.0.into();
 
-		let receipts = self
-			.receipt_extractor
-			.extract_receipts_from_block(&block)
-			.await
-			.unwrap_or_default();
+		let receipts = self.receipt_extractor.extract_from_block(&block).await.unwrap_or_default();
 		let gas_used =
 			receipts.iter().fold(U256::zero(), |acc, (_, receipt)| acc + receipt.gas_used);
 		let transactions = if hydrated_transactions {
