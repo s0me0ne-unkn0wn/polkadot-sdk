@@ -39,7 +39,7 @@ use sp_runtime::{
 		TransactionExtension,
 	},
 	transaction_validity::{InvalidTransaction, TransactionValidityError},
-	OpaqueExtrinsic, RuntimeDebug, Saturating,
+	OpaqueExtrinsic, RuntimeDebug,
 };
 
 type CallOf<T> = <T as frame_system::Config>::RuntimeCall;
@@ -363,11 +363,9 @@ pub trait EthExtra {
 		};
 
 		let nonce = nonce.unwrap_or_default().try_into().map_err(|_| InvalidTransaction::Call)?;
+		let gas_price = gas_price.unwrap_or_default();
 
-		let eth_fee_no_tip = Pallet::<Self::Config>::gas_to_fee(gas, GAS_PRICE.into())
-			.map_err(|_| InvalidTransaction::Call)?;
-
-		let eth_fee = Pallet::<Self::Config>::gas_to_fee(gas, gas_price.unwrap_or_default())
+		let eth_fee = Pallet::<Self::Config>::gas_to_fee(gas, gas_price)
 			.map_err(|_| InvalidTransaction::Call)?;
 
 		let info = call.get_dispatch_info();
@@ -390,7 +388,11 @@ pub trait EthExtra {
 			return Err(InvalidTransaction::Payment.into())
 		}
 
-		let tip = eth_fee.saturating_sub(eth_fee_no_tip);
+		let tip =
+			Pallet::<Self::Config>::gas_to_fee(gas, gas_price.saturating_sub(GAS_PRICE.into()))
+				.unwrap_or_default()
+				.min(actual_fee);
+
 		log::debug!(target: LOG_TARGET, "Created checked Ethereum transaction with nonce: {nonce:?} and tip: {tip:?}");
 		Ok(CheckedExtrinsic {
 			format: ExtrinsicFormat::Signed(signer.into(), Self::get_eth_extension(nonce, tip)),
