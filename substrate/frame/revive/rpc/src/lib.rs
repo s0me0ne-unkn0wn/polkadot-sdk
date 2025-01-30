@@ -41,6 +41,9 @@ pub use block_info_provider::*;
 mod receipt_provider;
 pub use receipt_provider::*;
 
+mod receipt_extractor;
+pub use receipt_extractor::*;
+
 mod rpc_health;
 pub use rpc_health::*;
 

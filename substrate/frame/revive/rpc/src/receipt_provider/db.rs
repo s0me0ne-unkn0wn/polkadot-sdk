@@ -16,7 +16,7 @@
 // limitations under the License.
 
 use super::*;
-use crate::BlockInfoProvider;
+use crate::{BlockInfoProvider, ReceiptExtractor};
 use jsonrpsee::core::async_trait;
 use pallet_revive::evm::{ReceiptInfo, TransactionSigned};
 use sp_core::H256;

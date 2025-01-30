@@ -20,9 +20,6 @@ use pallet_revive::evm::{ReceiptInfo, TransactionSigned, H256};
 use tokio::join;
 
 mod cache;
-mod receipt_extractor;
-pub use receipt_extractor::ReceiptExtractor;
-
 pub use cache::CacheReceiptProvider;
 
 mod db;
