@@ -190,6 +190,7 @@ mod tests {
 		DBReceiptProvider {
 			pool,
 			block_provider: Arc::new(MockBlockInfoProvider {}),
+			receipt_extractor: ReceiptExtractor::new(1_000_000),
 			read_only: false,
 		}
 	}
