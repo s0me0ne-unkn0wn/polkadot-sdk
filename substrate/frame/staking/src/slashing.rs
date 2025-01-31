@@ -57,9 +57,18 @@ use crate::{
 };
 use alloc::vec::Vec;
 use codec::{Decode, Encode, MaxEncodedLen};
-use frame_support::{defensive, dispatch::WithPostDispatchInfo, ensure, pallet_prelude::{One, Weight}, traits::{Defensive, DefensiveSaturating, Get, Imbalance, OnUnbalanced}};
+use frame_support::{
+	defensive,
+	dispatch::WithPostDispatchInfo,
+	ensure,
+	pallet_prelude::{One, Weight},
+	traits::{Defensive, DefensiveSaturating, Get, Imbalance, OnUnbalanced},
+};
 use scale_info::TypeInfo;
-use sp_runtime::{traits::{Saturating, Zero}, DispatchResult, RuntimeDebug, BoundedVec};
+use sp_runtime::{
+	traits::{Saturating, Zero},
+	BoundedVec, DispatchResult, RuntimeDebug,
+};
 use sp_staking::{
 	offence::{OffenceDetails, OffenceSeverity},
 	EraIndex, Page, SessionIndex, StakingInterface,
@@ -247,15 +256,20 @@ pub struct OffenceRecord<AccountId> {
 	pub slash_fraction: Perbill,
 }
 
-pub(crate) fn process_offence<T: Config>(offender: &T::AccountId, offence_era: EraIndex, offence_record: OffenceRecord<T::AccountId>) -> Weight {
+pub(crate) fn process_offence<T: Config>(
+	offender: &T::AccountId,
+	offence_era: EraIndex,
+	offence_record: OffenceRecord<T::AccountId>,
+) -> Weight {
 	// todo(ank4n): bench
 
 	let reward_proportion = SlashRewardFraction::<T>::get();
-	let maybe_exposure = EraInfo::<T>::get_paged_exposure(offence_era, offender, offence_record.exposure_page);
+	let maybe_exposure =
+		EraInfo::<T>::get_paged_exposure(offence_era, offender, offence_record.exposure_page);
 
 	if maybe_exposure.is_none() {
-		// defensive - this can only happen if the offence was valid at the time of reporting but
-		// became too old at the time of computing and should be discarded.
+		// this can only happen if the offence was valid at the time of reporting but became too old
+		// at the time of computing and should be discarded.
 		return Weight::default()
 	}
 
@@ -313,14 +327,13 @@ pub(crate) fn process_offence<T: Config>(offender: &T::AccountId, offence_era: E
 /// The pending slash record returned does not have initialized reporters. Those have
 /// to be set at a higher level, if any.
 // TODO(ank4n): Refactor to handle one slash page properly.
-pub(crate) fn compute_slash<T: Config>(
-	params: SlashParams<T>,
-) -> Option<UnappliedSlash<T>> {
+pub(crate) fn compute_slash<T: Config>(params: SlashParams<T>) -> Option<UnappliedSlash<T>> {
 	let mut reward_payout = Zero::zero();
 	let mut val_slashed = Zero::zero();
 
 	// is the slash amount here a maximum for the era?
 	// todo(ank4n): this is not correct. Validator slash should be slashed only once.
+
 	// find a good way to handle this.
 	let own_slash = params.slash * params.exposure.exposure_metadata.own;
 	if params.slash * params.exposure.exposure_page.page_total == Zero::zero() {
@@ -333,45 +346,14 @@ pub(crate) fn compute_slash<T: Config>(
 	let prior_slash_p = ValidatorSlashInEra::<T>::get(&params.slash_era, params.stash)
 		.map_or(Zero::zero(), |(prior_slash_proportion, _)| prior_slash_proportion);
 
-	// compare slash proportions rather than slash values to avoid issues due to rounding
-	// error.
-	if params.slash.deconstruct() > prior_slash_p.deconstruct() {
-		ValidatorSlashInEra::<T>::insert(
-			&params.slash_era,
-			params.stash,
-			&(params.slash, own_slash),
-		);
-	} else {
-		// we slash based on the max in era - this new event is not the max,
-		// so neither the validator or any nominators will need an update.
-		//
-		// this does lead to a divergence of our system from the paper, which
-		// pays out some reward even if the latest report is not max-in-era.
-		// we opt to avoid the nominator lookups and edits and leave more rewards
-		// for more drastic misbehavior.
-		return None
-	}
-
-	// apply slash to validator.
-	{
-		let mut spans = fetch_spans::<T>(
-			params.stash,
-			params.window_start,
-			&mut reward_payout,
-			&mut val_slashed,
-			params.reward_proportion,
-		);
-
-		let target_span = spans.compare_and_update_span_slash(params.slash_era, own_slash);
-
-		if target_span == Some(spans.span_index()) {
-			// misbehavior occurred within the current slashing span - end current span.
-			// Check <https://github.com/paritytech/polkadot-sdk/issues/2650> for details.
-			spans.end_span(params.now);
-		}
-	}
-
-	add_offending_validator::<T>(&params);
+	let Some((val_slashed, mut reward_payout)) =
+		slash_validator::<T>(params.clone(), prior_slash_p)
+	else {
+		// not the max slash, remove the offence record from queue.
+		// todo(ank4n): do this in the top level when creating offence record.
+		// so for any era, there will be only one entry per validator of an offence, never multiple.
+		return None;
+	};
 
 	let mut nominators_slashed = Vec::new();
 	reward_payout += slash_nominators::<T>(params.clone(), prior_slash_p, &mut nominators_slashed);
@@ -456,6 +438,60 @@ fn add_offending_validator<T: Config>(params: &SlashParams<T>) {
 
 	// `DisabledValidators` should be kept sorted
 	debug_assert!(DisabledValidators::<T>::get().windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+fn slash_validator<T: Config>(
+	params: SlashParams<T>,
+	prior_slash_p: Perbill,
+) -> Option<(BalanceOf<T>, BalanceOf<T>)> {
+	// should be called only once (at the last page) for a given offence record.
+	let own_slash = params.slash * params.exposure.exposure_metadata.own;
+
+	if params.slash.deconstruct() > prior_slash_p.deconstruct() {
+		ValidatorSlashInEra::<T>::insert(
+			&params.slash_era,
+			params.stash,
+			&(params.slash, own_slash),
+		);
+	} else {
+		// we slash based on the max in era - this new event is not the max,
+		// so neither the validator or any nominators will need an update.
+		//
+		// this does lead to a divergence of our system from the paper, which
+		// pays out some reward even if the latest report is not max-in-era.
+		// we opt to avoid the nominator lookups and edits and leave more rewards
+		// for more drastic misbehavior.
+
+		// todo(ank4n): At this point we should discard the offence record, since it's not the max
+		// slash in the era.
+		return None
+	}
+
+	// apply slash to validator.
+	let mut reward_payout = Zero::zero();
+	let mut val_slashed = Zero::zero();
+
+	{
+		let mut spans = fetch_spans::<T>(
+			params.stash,
+			params.window_start,
+			&mut reward_payout,
+			&mut val_slashed,
+			params.reward_proportion,
+		);
+
+		let target_span = spans.compare_and_update_span_slash(params.slash_era, own_slash);
+
+		if target_span == Some(spans.span_index()) {
+			// misbehavior occurred within the current slashing span - end current span.
+			// Check <https://github.com/paritytech/polkadot-sdk/issues/2650> for details.
+			spans.end_span(params.now);
+		}
+	}
+
+	add_offending_validator::<T>(&params);
+
+	Some((val_slashed, reward_payout))
 }
 
 /// Slash nominators. Accepts general parameters and the prior slash percentage of the validator.
@@ -722,10 +758,7 @@ pub fn do_slash<T: Config>(
 }
 
 /// Apply a previously-unapplied slash.
-pub(crate) fn apply_slash<T: Config>(
-	unapplied_slash: UnappliedSlash<T>,
-	slash_era: EraIndex,
-) {
+pub(crate) fn apply_slash<T: Config>(unapplied_slash: UnappliedSlash<T>, slash_era: EraIndex) {
 	let mut slashed_imbalance = NegativeImbalanceOf::<T>::zero();
 	let mut reward_payout = unapplied_slash.payout;
 
@@ -747,7 +780,11 @@ pub(crate) fn apply_slash<T: Config>(
 		);
 	}
 
-	pay_reporters::<T>(reward_payout, slashed_imbalance, &unapplied_slash.reporter.map(|v| vec![v]).unwrap_or_default());
+	pay_reporters::<T>(
+		reward_payout,
+		slashed_imbalance,
+		&unapplied_slash.reporter.map(|v| vec![v]).unwrap_or_default(),
+	);
 }
 
 /// Apply a reward payout to some reporters, paying the rewards out of the slashed imbalance.
