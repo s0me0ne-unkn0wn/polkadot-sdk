@@ -266,6 +266,7 @@ pub struct OffenceRecord<AccountId> {
 /// Ensures an offence is enqueued for processing. Infallible.
 // todo(ank4n): bench
 pub(crate) fn enqueue_offence<T: Config>() {
+	// ensure we don't ever overwrite processing offense.
 	if ProcessingOffence::<T>::get().is_some() {
 		// An offence is already being processed; wait until it's finished.
 		return
@@ -296,23 +297,21 @@ pub(crate) fn enqueue_offence<T: Config>() {
 
 /// Infallible function to process an offence.
 pub(crate) fn process_offence<T: Config>() {
-	let current_offence = ProcessingOffence::<T>::get();
-	if current_offence.is_none() {
-		// nothing to process.
-		return
-	}
-
-	let (offence_era, offender, offence_record) =
-		current_offence.expect("value checked not to be `None`; qed");
+	let Some((offence_era, offender, offence_record)) = ProcessingOffence::<T>::get() else {
+		// No offence to process
+		return;
+	};
 
 	if offence_record.exposure_page == 0 {
+		// The last page has been processed, clear the offence record.
 		ProcessingOffence::<T>::kill();
 	} else {
+		// Update the offence record to process the next page.
 		ProcessingOffence::<T>::put((
 			offence_era,
 			&offender,
 			OffenceRecord {
-				// decrement the exposure page to process the next page.
+				// decrement the page index.
 				exposure_page: offence_record.exposure_page.defensive_saturating_sub(1),
 				..offence_record.clone()
 			},
@@ -320,18 +319,17 @@ pub(crate) fn process_offence<T: Config>() {
 	}
 
 	let reward_proportion = SlashRewardFraction::<T>::get();
-	let maybe_exposure =
-		EraInfo::<T>::get_paged_exposure(offence_era, &offender, offence_record.exposure_page);
-
-	if maybe_exposure.is_none() {
+	let Some(exposure) =
+		EraInfo::<T>::get_paged_exposure(offence_era, &offender, offence_record.exposure_page)
+	else {
 		// this can only happen if the offence was valid at the time of reporting but became too old
 		// at the time of computing and should be discarded.
 		return
-	}
+	};
 
-	let exposure = maybe_exposure.expect("value checked not to be `None`; qed");
 	let slash_defer_duration = T::SlashDeferDuration::get();
 
+	// todo(an4n): Review/Fix events.
 	<Pallet<T>>::deposit_event(super::Event::<T>::SlashReported {
 		validator: offender.clone(),
 		fraction: offence_record.slash_fraction,
@@ -340,7 +338,7 @@ pub(crate) fn process_offence<T: Config>() {
 
 	let window_start = offence_record.reported_era.saturating_sub(T::BondingDuration::get());
 
-	let unapplied = compute_slash::<T>(SlashParams {
+	let Some(mut unapplied) = compute_slash::<T>(SlashParams {
 		stash: &offender,
 		slash: offence_record.slash_fraction,
 		exposure: &exposure,
@@ -348,29 +346,31 @@ pub(crate) fn process_offence<T: Config>() {
 		window_start,
 		now: offence_record.reported_era,
 		reward_proportion,
-	});
+	}) else {
+		// Could not compute slash. Discard the offence page.
+		return
+	};
 
-	if let Some(mut unapplied) = unapplied {
-		unapplied.reporter = offence_record.reporter;
-		if slash_defer_duration == 0 {
-			// Apply right away.
-			apply_slash::<T>(unapplied, offence_era);
-		} else {
-			// Defer to end of some `slash_defer_duration` from now.
-			log!(
-				debug,
-				"deferring slash of {:?}% happened in {:?} (reported in {:?}) to {:?}",
-				offence_record.slash_fraction,
-				offence_era,
-				offence_record.reported_era,
-				offence_era + slash_defer_duration + 1,
-			);
-			UnappliedSlashes::<T>::mutate(
-				offence_era.saturating_add(slash_defer_duration).saturating_add(One::one()),
-				move |for_later| for_later.push(unapplied),
-			);
-		}
+	// add the reporter to the unapplied slash.
+	unapplied.reporter = offence_record.reporter;
+
+	if slash_defer_duration == 0 {
+		// Apply right away.
+		apply_slash::<T>(unapplied, offence_era);
 	} else {
+		// Defer to end of some `slash_defer_duration` from now.
+		log!(
+			debug,
+			"deferring slash of {:?}% happened in {:?} (reported in {:?}) to {:?}",
+			offence_record.slash_fraction,
+			offence_era,
+			offence_record.reported_era,
+			offence_era + slash_defer_duration + 1,
+		);
+		UnappliedSlashes::<T>::mutate(
+			offence_era.saturating_add(slash_defer_duration).saturating_add(One::one()),
+			move |for_later| for_later.push(unapplied),
+		);
 	}
 }
 
