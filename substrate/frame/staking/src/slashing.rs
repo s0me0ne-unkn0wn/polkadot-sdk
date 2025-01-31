@@ -263,26 +263,47 @@ pub struct OffenceRecord<AccountId> {
 	pub prior_slash_fraction: Perbill,
 }
 
-/// Ensures an offence is enqueued for processing. Infallible.
-// todo(ank4n): bench
-pub(crate) fn enqueue_offence<T: Config>() {
-	// ensure we don't ever overwrite processing offense.
-	if ProcessingOffence::<T>::get().is_some() {
-		// An offence is already being processed; wait until it's finished.
-		return
+/// Loads next offence in the processing offence and returns the offense record to be processed.
+///
+/// Note: this can mutate the following storage
+/// - `ProcessingOffence`
+/// - `OffenceQueue`
+/// - `OffenceQueueEras`
+fn next_offence<T: Config>() -> Option<(EraIndex, T::AccountId, OffenceRecord<T::AccountId>)> {
+	let processing_offence = ProcessingOffence::<T>::get();
+
+	if let Some((offence_era, offender, offence_record)) = processing_offence {
+		// Update the next page.
+		ProcessingOffence::<T>::put((
+			offence_era,
+			&offender,
+			OffenceRecord {
+				// decrement the page index.
+				exposure_page: offence_record.exposure_page.defensive_saturating_sub(1),
+				..offence_record.clone()
+			},
+		));
+
+		return Some((offence_era, offender, offence_record))
 	}
 
-	let Some(mut eras) = OffenceQueueEras::<T>::get() else {
-		// No offences to process.
-		return
-	};
-
-	let Some(&oldest_era) = eras.first() else { return };
+	// Nothing in processing offence. Try to enqueue the next offence.
+	let Some(mut eras) = OffenceQueueEras::<T>::get() else { return None };
+	let Some(&oldest_era) = eras.first() else { return None };
 
 	let mut offence_iter = OffenceQueue::<T>::iter_prefix(oldest_era);
-	if let Some((validator, offence_record)) = offence_iter.next() {
-		// Move the offence to `ProcessingOffence`
-		ProcessingOffence::<T>::put((oldest_era, validator.clone(), offence_record));
+	let next_offence = offence_iter.next();
+
+	if let Some((ref validator, ref offence_record)) = next_offence {
+		// update processing offence with the next page.
+		ProcessingOffence::<T>::put((
+			oldest_era,
+			validator.clone(),
+			OffenceRecord {
+				exposure_page: offence_record.exposure_page.defensive_saturating_sub(1),
+				..offence_record.clone()
+			},
+		));
 
 		// Remove from `OffenceQueue`
 		OffenceQueue::<T>::remove(oldest_era, &validator);
@@ -293,30 +314,16 @@ pub(crate) fn enqueue_offence<T: Config>() {
 		eras.remove(0); // Remove the oldest era
 		OffenceQueueEras::<T>::put(eras);
 	}
+
+	next_offence.map(|(v, o)| (oldest_era, v, o))
 }
 
 /// Infallible function to process an offence.
 pub(crate) fn process_offence<T: Config>() {
-	let Some((offence_era, offender, offence_record)) = ProcessingOffence::<T>::get() else {
+	let Some((offence_era, offender, offence_record)) = next_offence::<T>() else {
 		// No offence to process
 		return;
 	};
-
-	if offence_record.exposure_page == 0 {
-		// The last page has been processed, clear the offence record.
-		ProcessingOffence::<T>::kill();
-	} else {
-		// Update the offence record to process the next page.
-		ProcessingOffence::<T>::put((
-			offence_era,
-			&offender,
-			OffenceRecord {
-				// decrement the page index.
-				exposure_page: offence_record.exposure_page.defensive_saturating_sub(1),
-				..offence_record.clone()
-			},
-		));
-	}
 
 	let reward_proportion = SlashRewardFraction::<T>::get();
 	let Some(exposure) =
@@ -328,13 +335,7 @@ pub(crate) fn process_offence<T: Config>() {
 	};
 
 	let slash_defer_duration = T::SlashDeferDuration::get();
-
-	// todo(an4n): Review/Fix events.
-	<Pallet<T>>::deposit_event(super::Event::<T>::SlashReported {
-		validator: offender.clone(),
-		fraction: offence_record.slash_fraction,
-		slash_era: offence_era,
-	});
+	let slash_era = offence_era.saturating_add(slash_defer_duration);
 
 	let window_start = offence_record.reported_era.saturating_sub(T::BondingDuration::get());
 
@@ -351,6 +352,13 @@ pub(crate) fn process_offence<T: Config>() {
 		return
 	};
 
+	<Pallet<T>>::deposit_event(super::Event::<T>::SlashComputed {
+		offence_era,
+		slash_era,
+		offender,
+		page: offence_record.exposure_page,
+	});
+
 	// add the reporter to the unapplied slash.
 	unapplied.reporter = offence_record.reporter;
 
@@ -358,19 +366,20 @@ pub(crate) fn process_offence<T: Config>() {
 		// Apply right away.
 		apply_slash::<T>(unapplied, offence_era);
 	} else {
-		// Defer to end of some `slash_defer_duration` from now.
+		// Historical Note: Previously, with BondingDuration = 28 and SlashDeferDuration = 27,
+		// slashes were applied at the start of the 28th era from `offence_era`.
+		// However, with paged slashing, applying slashes now takes multiple blocks.
+		// To account for this delay, slashes are now applied at the start of the 27th era from
+		// `offence_era`.
 		log!(
 			debug,
 			"deferring slash of {:?}% happened in {:?} (reported in {:?}) to {:?}",
 			offence_record.slash_fraction,
 			offence_era,
 			offence_record.reported_era,
-			offence_era + slash_defer_duration + 1,
+			slash_era,
 		);
-		UnappliedSlashes::<T>::mutate(
-			offence_era.saturating_add(slash_defer_duration).saturating_add(One::one()),
-			move |for_later| for_later.push(unapplied),
-		);
+		UnappliedSlashes::<T>::mutate(slash_era, move |for_later| for_later.push(unapplied));
 	}
 }
 

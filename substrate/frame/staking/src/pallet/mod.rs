@@ -936,6 +936,13 @@ pub mod pallet {
 		/// Staking balance migrated from locks to holds, with any balance that could not be held
 		/// is force withdrawn.
 		CurrencyMigrated { stash: T::AccountId, force_withdraw: BalanceOf<T> },
+		/// An offence has been processed and the corresponding slash has been computed.
+		SlashComputed {
+			offence_era: EraIndex,
+			slash_era: EraIndex,
+			offender: T::AccountId,
+			page: u32,
+		},
 	}
 
 	#[pallet::error]

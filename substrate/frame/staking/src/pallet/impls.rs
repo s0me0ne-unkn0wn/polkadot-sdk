@@ -1559,8 +1559,6 @@ where
 
 			if let Some(mut existing) = OffenceQueue::<T>::get(offence_era, validator) {
 				if slash_fraction.deconstruct() > existing.slash_fraction.deconstruct() {
-					// existing.slash_fraction = slash_fraction;
-					// existing.reporter = details.reporters.first().cloned();
 					OffenceQueue::<T>::insert(
 						offence_era,
 						validator,
@@ -1571,6 +1569,12 @@ where
 							..existing
 						},
 					);
+
+					Self::deposit_event(Event::<T>::SlashReported {
+						validator: validator.clone(),
+						fraction: *slash_fraction,
+						slash_era: offence_era,
+					});
 				}
 			} else if slash_fraction.deconstruct() > prior_slash_fraction.deconstruct() {
 				ValidatorSlashInEra::<T>::insert(
@@ -1591,6 +1595,12 @@ where
 						prior_slash_fraction,
 					},
 				);
+
+				Self::deposit_event(Event::<T>::SlashReported {
+					validator: validator.clone(),
+					fraction: *slash_fraction,
+					slash_era: offence_era,
+				});
 			}
 		}
 
