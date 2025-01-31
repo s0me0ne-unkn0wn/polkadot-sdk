@@ -690,7 +690,6 @@ pub mod pallet {
 		slashing::OffenceRecord<T::AccountId>,
 	>;
 
-
 	/// Tracks the eras that contain offences in `OffenceQueue`, sorted from **earliest to latest**.
 	///
 	/// - This ensures efficient retrieval of the oldest offence without iterating through
@@ -709,16 +708,17 @@ pub mod pallet {
 	///
 	/// - When processing offences, an offence record is **popped** from the oldest era in
 	///   `OffenceQueue` and stored here.
-	/// - The function `process_offence` reads from this storage, processing one page of exposure
-	///   at a time.
-	/// - After processing a page, the `exposure_page` count is **decremented** until it reaches zero.
+	/// - The function `process_offence` reads from this storage, processing one page of exposure at
+	///   a time.
+	/// - After processing a page, the `exposure_page` count is **decremented** until it reaches
+	///   zero.
 	/// - Once fully processed, the offence record is removed from this storage.
 	///
 	/// This ensures that offences are processed incrementally, preventing excessive computation
 	/// in a single block while maintaining correct slashing behavior.
 	#[pallet::storage]
-	pub type ProcessingOffence<T: Config> = StorageValue<_, (EraIndex, T::AccountId, slashing::OffenceRecord<T::AccountId>)>;
-
+	pub type ProcessingOffence<T: Config> =
+		StorageValue<_, (EraIndex, T::AccountId, slashing::OffenceRecord<T::AccountId>)>;
 
 	/// All unapplied slashes that are queued for later.
 	#[pallet::storage]

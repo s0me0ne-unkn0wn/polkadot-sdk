@@ -276,9 +276,7 @@ pub(crate) fn enqueue_offence<T: Config>() {
 		return
 	};
 
-	let Some(&oldest_era) = eras.first() else {
-		return
-	};
+	let Some(&oldest_era) = eras.first() else { return };
 
 	let mut offence_iter = OffenceQueue::<T>::iter_prefix(oldest_era);
 	if let Some((validator, offence_record)) = offence_iter.next() {
