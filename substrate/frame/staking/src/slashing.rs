@@ -52,8 +52,9 @@
 use crate::{
 	asset, log, pallet::pallet::BondedEras, ActiveEra, BalanceOf, Config, DisabledValidators,
 	DisablingStrategy, EraInfo, ErasStartSessionIndex, Error, Exposure, Invulnerables,
-	NegativeImbalanceOf, NominatorSlashInEra, PagedExposure, Pallet, Perbill, SessionInterface,
-	SlashRewardFraction, SpanSlash, UnappliedSlash, UnappliedSlashes, ValidatorSlashInEra,
+	NegativeImbalanceOf, NominatorSlashInEra, OffenceQueue, OffenceQueueEras, PagedExposure,
+	Pallet, Perbill, ProcessingOffence, SessionInterface, SlashRewardFraction, SpanSlash,
+	UnappliedSlash, UnappliedSlashes, ValidatorSlashInEra,
 };
 use alloc::vec::Vec;
 use codec::{Decode, Encode, MaxEncodedLen};
@@ -231,7 +232,7 @@ pub(crate) struct SlashParams<'a, T: 'a + Config> {
 
 /// Represents an offence record within the staking system, capturing details about a slashing
 /// event.
-#[derive(Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Encode, Decode, TypeInfo, MaxEncodedLen)]
 pub struct OffenceRecord<AccountId> {
 	/// The account ID of the entity that reported the offence.
 	pub reporter: Option<AccountId>,
@@ -262,21 +263,72 @@ pub struct OffenceRecord<AccountId> {
 	pub prior_slash_fraction: Perbill,
 }
 
-pub(crate) fn process_offence<T: Config>(
-	offender: &T::AccountId,
-	offence_era: EraIndex,
-	offence_record: OffenceRecord<T::AccountId>,
-) -> Weight {
-	// todo(ank4n): bench
+/// Ensures an offence is enqueued for processing. Infallible.
+// todo(ank4n): bench
+pub(crate) fn enqueue_offence<T: Config>() {
+	if ProcessingOffence::<T>::get().is_some() {
+		// An offence is already being processed; wait until it's finished.
+		return
+	}
+
+	let Some(mut eras) = OffenceQueueEras::<T>::get() else {
+		// No offences to process.
+		return
+	};
+
+	let Some(&oldest_era) = eras.first() else {
+		return
+	};
+
+	let mut offence_iter = OffenceQueue::<T>::iter_prefix(oldest_era);
+	if let Some((validator, offence_record)) = offence_iter.next() {
+		// Move the offence to `ProcessingOffence`
+		ProcessingOffence::<T>::put((oldest_era, validator.clone(), offence_record));
+
+		// Remove from `OffenceQueue`
+		OffenceQueue::<T>::remove(oldest_era, &validator);
+	}
+
+	// If there are no offences left for the era, remove the era from `OffenceQueueEras`.
+	if offence_iter.next().is_none() {
+		eras.remove(0); // Remove the oldest era
+		OffenceQueueEras::<T>::put(eras);
+	}
+}
+
+/// Infallible function to process an offence.
+pub(crate) fn process_offence<T: Config>() {
+	let current_offence = ProcessingOffence::<T>::get();
+	if current_offence.is_none() {
+		// nothing to process.
+		return
+	}
+
+	let (offence_era, offender, offence_record) =
+		current_offence.expect("value checked not to be `None`; qed");
+
+	if offence_record.exposure_page == 0 {
+		ProcessingOffence::<T>::kill();
+	} else {
+		ProcessingOffence::<T>::put((
+			offence_era,
+			&offender,
+			OffenceRecord {
+				// decrement the exposure page to process the next page.
+				exposure_page: offence_record.exposure_page.defensive_saturating_sub(1),
+				..offence_record.clone()
+			},
+		));
+	}
 
 	let reward_proportion = SlashRewardFraction::<T>::get();
 	let maybe_exposure =
-		EraInfo::<T>::get_paged_exposure(offence_era, offender, offence_record.exposure_page);
+		EraInfo::<T>::get_paged_exposure(offence_era, &offender, offence_record.exposure_page);
 
 	if maybe_exposure.is_none() {
 		// this can only happen if the offence was valid at the time of reporting but became too old
 		// at the time of computing and should be discarded.
-		return Weight::default()
+		return
 	}
 
 	let exposure = maybe_exposure.expect("value checked not to be `None`; qed");
@@ -291,7 +343,7 @@ pub(crate) fn process_offence<T: Config>(
 	let window_start = offence_record.reported_era.saturating_sub(T::BondingDuration::get());
 
 	let unapplied = compute_slash::<T>(SlashParams {
-		stash: offender,
+		stash: &offender,
 		slash: offence_record.slash_fraction,
 		exposure: &exposure,
 		slash_era: offence_era,
@@ -322,8 +374,6 @@ pub(crate) fn process_offence<T: Config>(
 		}
 	} else {
 	}
-
-	Weight::default()
 }
 
 /// Computes a slash of a validator and nominators. It returns an unapplied

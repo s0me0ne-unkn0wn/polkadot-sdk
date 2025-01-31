@@ -690,13 +690,35 @@ pub mod pallet {
 		slashing::OffenceRecord<T::AccountId>,
 	>;
 
-	/// Tracks the number of offence records (divided into pages) currently awaiting processing for
-	/// the oldest available era.
+
+	/// Tracks the eras that contain offences in `OffenceQueue`, sorted from **earliest to latest**.
 	///
-	/// Since a single offence may span multiple pages, and they are further split into pages, the
-	/// `OffenceQueue` count alone is insufficient for accurate tracking.
+	/// - This ensures efficient retrieval of the oldest offence without iterating through
+	/// `OffenceQueue`.
+	/// - When a new offence is added to `OffenceQueue`, its era is **inserted in sorted order**
+	/// if not already present.
+	/// - When all offences for an era are processed, it is **removed** from this list.
+	/// - The maximum length of this vector is bounded by `BondingDuration`.
+	///
+	/// This eliminates the need for expensive iteration and sorting when fetching the next offence
+	/// to process.
 	#[pallet::storage]
-	pub type OffenceQueueEraHead<T> = StorageValue<_, (u32, u32)>;
+	pub type OffenceQueueEras<T: Config> = StorageValue<_, BoundedVec<u32, T::BondingDuration>>;
+
+	/// Tracks the currently processed offence record from the `OffenceQueue`.
+	///
+	/// - When processing offences, an offence record is **popped** from the oldest era in
+	///   `OffenceQueue` and stored here.
+	/// - The function `process_offence` reads from this storage, processing one page of exposure
+	///   at a time.
+	/// - After processing a page, the `exposure_page` count is **decremented** until it reaches zero.
+	/// - Once fully processed, the offence record is removed from this storage.
+	///
+	/// This ensures that offences are processed incrementally, preventing excessive computation
+	/// in a single block while maintaining correct slashing behavior.
+	#[pallet::storage]
+	pub type ProcessingOffence<T: Config> = StorageValue<_, (EraIndex, T::AccountId, slashing::OffenceRecord<T::AccountId>)>;
+
 
 	/// All unapplied slashes that are queued for later.
 	#[pallet::storage]
