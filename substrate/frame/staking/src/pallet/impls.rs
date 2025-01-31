@@ -1549,43 +1549,72 @@ where
 				continue
 			}
 
-			let own_slash = <ErasStakersOverview<T>>::get(&offence_era, validator).map(|s| s.own);
-			if own_slash.is_none() {
+			let exposure_overview = <ErasStakersOverview<T>>::get(&offence_era, validator);
+			if exposure_overview.is_none() {
 				// validator exposure not found, discard.
 				continue
 			}
-			let own_slash = own_slash.expect("value checked not to be `None`; qed");
+			let exposure_overview = exposure_overview.expect("value checked not to be `None`; qed");
 
+			// get existing offence record
+			match OffenceQueue::<T>::get(offence_era, validator) {
+				Some(existing) => {
+					// if offence record exists in queue, it means the last offence reported for the
+					// era is not processed yet.
 
-			let prior_slash_p = ValidatorSlashInEra::<T>::get(offence_era, validator)
-				.map_or(Zero::zero(), |(prior_slash_proportion, _)| prior_slash_proportion);
+					// if the slash fraction is higher than existing, update it.
+					if *slash_fraction > existing.slash_fraction {
+						OffenceQueue::<T>::insert(
+							offence_era,
+							validator,
+							OffenceRecord {
+								reporter: details.reporters.first().cloned(),
+								reported_era: active_era,
+								offence_era,
+								exposure_page: exposure_overview.page_count - 1,
+								slash_fraction: *slash_fraction,
+								prior_slash_fraction: existing.slash_fraction,
+							},
+						);
+					} else {
+						// else we just discard it.
+						continue
+					}
+				},
+				None => {
+					// no offence record in the queue. Find prior slash fraction and upsert it in
+					// `ValidatorSlashInEra`.
+					let prior_slash_fraction =
+						ValidatorSlashInEra::<T>::get(offence_era, validator)
+							.map_or(Zero::zero(), |(prior_slash_proportion, _)| {
+								prior_slash_proportion
+							});
 
-			if slash_fraction.deconstruct() > prior_slash_p.deconstruct() {
-				ValidatorSlashInEra::<T>::insert(
-					offence_era,
-					validator,
-					(slash_fraction, own_slash),
-				);
-			} else {
-				// If the slash fraction is less than the prior slash fraction in the offence era,
-				// then we don't need to do anything.
-				continue
+					if slash_fraction.deconstruct() > prior_slash_fraction.deconstruct() {
+						ValidatorSlashInEra::<T>::insert(
+							offence_era,
+							validator,
+							(slash_fraction, exposure_overview.own),
+						);
+
+						OffenceQueue::<T>::insert(
+							offence_era,
+							validator,
+							OffenceRecord {
+								reporter: details.reporters.first().cloned(),
+								reported_era: active_era,
+								offence_era,
+								exposure_page: exposure_overview.page_count - 1,
+								slash_fraction: *slash_fraction,
+								prior_slash_fraction,
+							},
+						);
+					} else {
+						// If the slash fraction is less than the prior slash fraction, discard.
+						continue
+					}
+				},
 			}
-
-			let pages = <EraInfo<T>>::get_page_count(offence_era, validator);
-
-			// This might overwrite an existing offence record. However, this is acceptable
-			// because the only scenario where we should avoid overwriting is when the new
-			// slash fraction is lower than the prior slash fraction. In that case, we exit early
-			// before reaching this code path.
-			OffenceQueue::<T>::insert(offence_era, validator, OffenceRecord {
-				reporter: details.reporters.first().cloned(),
-				reported_era: active_era,
-				offence_era,
-				exposure_page: pages - 1, // Process last page first.
-				slash_fraction: *slash_fraction,
-				prior_slash_fraction: prior_slash_p,
-			});
 		}
 
 		Weight::default()
