@@ -62,6 +62,7 @@ use super::pallet::*;
 use crate::slashing::OffenceRecord;
 #[cfg(feature = "try-runtime")]
 use frame_support::ensure;
+use frame_support::traits::tokens::Preservation::Protect;
 #[cfg(any(test, feature = "try-runtime"))]
 use sp_runtime::TryRuntimeError;
 
@@ -1500,43 +1501,40 @@ where
 		Option<<T as frame_system::Config>::AccountId>,
 	>,
 {
+	/// When an offence is reported, it is split into pages and put in the offence queue.
+	/// As offence queue is processed, computed slashes are queued to be applied after the
+	/// `SlashDeferDuration`.
+	// todo(ank4n): Needs to be benched.
 	fn on_offence(
 		offenders: &[OffenceDetails<T::AccountId, T::AccountId>],
 		slash_fractions: &[Perbill],
 		slash_session: SessionIndex,
 	) -> Weight {
-		// When an offence is reported, it is split into pages and put in the offence queue.
-		// As offence queue is processed, computed slashes are queued to be applied after the
-		// SlashDeferDuration.
-
-		// todo(ank4n): Benchmark this properly.
 		// Find the era to which offence belongs.
-		let active_era = {
-			let active_era = ActiveEra::<T>::get();
-			if active_era.is_none() {
-				// This offence need not be re-submitted.
-				return Weight::default()
-			}
-			active_era.expect("value checked not to be `None`; qed").index
+		let Some(active_era) = ActiveEra::<T>::get() else {
+			return Weight::default();
 		};
-		let active_era_start_session_index = ErasStartSessionIndex::<T>::get(active_era)
-			.unwrap_or_else(|| {
-				frame_support::print("Error: start_session_index must be set for current_era");
-				0
-			});
+		let active_era_start_session =
+			ErasStartSessionIndex::<T>::get(active_era.index).unwrap_or(0);
 
 		// Fast path for active-era report - most likely.
 		// `slash_session` cannot be in a future active era. It must be in `active_era` or before.
-		let offence_era = if slash_session >= active_era_start_session_index {
-			active_era
+		let offence_era = if slash_session >= active_era_start_session {
+			active_era.index
 		} else {
-			let eras = BondedEras::<T>::get();
-
-			// Reverse because it's more likely to find reports from recent eras.
-			match eras.iter().rev().find(|&(_, sesh)| sesh <= &slash_session) {
-				Some((slash_era, _)) => *slash_era,
-				// Before bonding period. defensive - should be filtered out.
-				None => return Weight::default(),
+			match BondedEras::<T>::get()
+				.iter()
+				// Reverse because it's more likely to find reports from recent eras.
+				.rev()
+				.find(|&(_, sesh)| sesh <= &slash_session)
+				.map(|(era, _)| *era)
+			{
+				Some(era) => era,
+				None => {
+					// defensive: this implies offence is for a discarded era, and should already be
+					// filtered out.
+					return Weight::default()
+				},
 			}
 		};
 
@@ -1549,71 +1547,50 @@ where
 				continue
 			}
 
-			let exposure_overview = <ErasStakersOverview<T>>::get(&offence_era, validator);
-			if exposure_overview.is_none() {
-				// validator exposure not found, discard.
-				continue
-			}
-			let exposure_overview = exposure_overview.expect("value checked not to be `None`; qed");
+			let Some(exposure_overview) = <ErasStakersOverview<T>>::get(&offence_era, validator)
+			else {
+				// defensive: this implies offence is for a discarded era, and should already be
+				// filtered out.
+				continue;
+			};
 
-			// get existing offence record
-			match OffenceQueue::<T>::get(offence_era, validator) {
-				Some(existing) => {
-					// if offence record exists in queue, it means the last offence reported for the
-					// era is not processed yet.
+			let prior_slash_fraction = ValidatorSlashInEra::<T>::get(offence_era, validator)
+				.map_or(Zero::zero(), |(f, _)| f);
 
-					// if the slash fraction is higher than existing, update it.
-					if *slash_fraction > existing.slash_fraction {
-						OffenceQueue::<T>::insert(
-							offence_era,
-							validator,
-							OffenceRecord {
-								reporter: details.reporters.first().cloned(),
-								reported_era: active_era,
-								offence_era,
-								exposure_page: exposure_overview.page_count - 1,
-								slash_fraction: *slash_fraction,
-								prior_slash_fraction: existing.slash_fraction,
-							},
-						);
-					} else {
-						// else we just discard it.
-						continue
-					}
-				},
-				None => {
-					// no offence record in the queue. Find prior slash fraction and upsert it in
-					// `ValidatorSlashInEra`.
-					let prior_slash_fraction =
-						ValidatorSlashInEra::<T>::get(offence_era, validator)
-							.map_or(Zero::zero(), |(prior_slash_proportion, _)| {
-								prior_slash_proportion
-							});
+			if let Some(mut existing) = OffenceQueue::<T>::get(offence_era, validator) {
+				if slash_fraction.deconstruct() > existing.slash_fraction.deconstruct() {
+					// existing.slash_fraction = slash_fraction;
+					// existing.reporter = details.reporters.first().cloned();
+					OffenceQueue::<T>::insert(
+						offence_era,
+						validator,
+						OffenceRecord {
+							reporter: details.reporters.first().cloned(),
+							reported_era: active_era.index,
+							slash_fraction: *slash_fraction,
+							..existing
+						},
+					);
+				}
+			} else if slash_fraction.deconstruct() > prior_slash_fraction.deconstruct() {
+				ValidatorSlashInEra::<T>::insert(
+					offence_era,
+					validator,
+					(slash_fraction, exposure_overview.own),
+				);
 
-					if slash_fraction.deconstruct() > prior_slash_fraction.deconstruct() {
-						ValidatorSlashInEra::<T>::insert(
-							offence_era,
-							validator,
-							(slash_fraction, exposure_overview.own),
-						);
-
-						OffenceQueue::<T>::insert(
-							offence_era,
-							validator,
-							OffenceRecord {
-								reporter: details.reporters.first().cloned(),
-								reported_era: active_era,
-								offence_era,
-								exposure_page: exposure_overview.page_count - 1,
-								slash_fraction: *slash_fraction,
-								prior_slash_fraction,
-							},
-						);
-					} else {
-						// If the slash fraction is less than the prior slash fraction, discard.
-						continue
-					}
-				},
+				OffenceQueue::<T>::insert(
+					offence_era,
+					validator,
+					OffenceRecord {
+						reporter: details.reporters.first().cloned(),
+						reported_era: active_era.index,
+						offence_era,
+						exposure_page: exposure_overview.page_count - 1,
+						slash_fraction: *slash_fraction,
+						prior_slash_fraction,
+					},
+				);
 			}
 		}
 

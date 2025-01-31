@@ -701,13 +701,8 @@ pub mod pallet {
 	/// All unapplied slashes that are queued for later.
 	#[pallet::storage]
 	#[pallet::unbounded]
-	pub type UnappliedSlashes<T: Config> = StorageMap<
-		_,
-		Twox64Concat,
-		EraIndex,
-		Vec<UnappliedSlash<T>>,
-		ValueQuery,
-	>;
+	pub type UnappliedSlashes<T: Config> =
+		StorageMap<_, Twox64Concat, EraIndex, Vec<UnappliedSlash<T>>, ValueQuery>;
 
 	/// A mapping from still-bonded eras to the first session index of that era.
 	///

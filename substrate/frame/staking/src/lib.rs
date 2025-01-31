@@ -309,15 +309,21 @@ extern crate alloc;
 
 use alloc::{collections::btree_map::BTreeMap, vec, vec::Vec};
 use codec::{Decode, Encode, HasCompact, MaxEncodedLen};
-use frame_support::{defensive, defensive_assert, traits::{
-	tokens::fungible::{Credit, Debt},
-	ConstU32, Defensive, DefensiveMax, DefensiveSaturating, Get, LockIdentifier,
-}, weights::Weight, BoundedVec, CloneNoBound, EqNoBound, PartialEqNoBound, RuntimeDebugNoBound, DebugNoBound};
+use frame_support::{
+	defensive, defensive_assert,
+	traits::{
+		tokens::fungible::{Credit, Debt},
+		ConstU32, Defensive, DefensiveMax, DefensiveSaturating, Get, LockIdentifier,
+	},
+	weights::Weight,
+	BoundedVec, CloneNoBound, DebugNoBound, EqNoBound, PartialEqNoBound, RuntimeDebugNoBound,
+};
 use scale_info::TypeInfo;
 use sp_runtime::{
+	bounded_vec,
 	curve::PiecewiseLinear,
 	traits::{AtLeast32BitUnsigned, Convert, StaticLookup, Zero},
-	Perbill, Perquintill, Rounding, RuntimeDebug, Saturating, bounded_vec,
+	Perbill, Perquintill, Rounding, RuntimeDebug, Saturating,
 };
 use sp_staking::{
 	offence::{Offence, OffenceError, OffenceSeverity, ReportOffence},
