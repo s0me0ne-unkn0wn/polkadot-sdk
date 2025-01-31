@@ -364,7 +364,7 @@ pub(crate) fn process_offence<T: Config>() {
 		now: offence_record.reported_era,
 		reward_proportion,
 	}) else {
-		// Could not compute slash. Discard the offence page.
+		// No slash to apply. Discard.
 		return
 	};
 
@@ -807,15 +807,21 @@ pub(crate) fn apply_slash<T: Config>(unapplied_slash: UnappliedSlash<T>, slash_e
 	let mut slashed_imbalance = NegativeImbalanceOf::<T>::zero();
 	let mut reward_payout = unapplied_slash.payout;
 
-	do_slash::<T>(
-		&unapplied_slash.validator,
-		unapplied_slash.own,
-		&mut reward_payout,
-		&mut slashed_imbalance,
-		slash_era,
-	);
+	if unapplied_slash.own > Zero::zero() {
+		do_slash::<T>(
+			&unapplied_slash.validator,
+			unapplied_slash.own,
+			&mut reward_payout,
+			&mut slashed_imbalance,
+			slash_era,
+		);
+	}
 
 	for &(ref nominator, nominator_slash) in &unapplied_slash.others {
+		if nominator_slash.is_zero() {
+			continue
+		}
+
 		do_slash::<T>(
 			nominator,
 			nominator_slash,
