@@ -254,6 +254,12 @@ pub struct OffenceRecord<AccountId> {
 
 	/// The fraction of the validator's stake to be slashed for this offence.
 	pub slash_fraction: Perbill,
+
+	/// The previous slash fraction of the validator's stake before being updated.
+	/// If a new, higher slash fraction is reported, this field stores the prior fraction
+	/// that was overwritten. This helps in tracking changes in slashes across multiple reports for
+	/// the same era.
+	pub prior_slash_fraction: Perbill,
 }
 
 pub(crate) fn process_offence<T: Config>(
@@ -328,8 +334,8 @@ pub(crate) fn process_offence<T: Config>(
 /// to be set at a higher level, if any.
 // TODO(ank4n): Refactor to handle one slash page properly.
 pub(crate) fn compute_slash<T: Config>(params: SlashParams<T>) -> Option<UnappliedSlash<T>> {
-	let mut reward_payout = Zero::zero();
-	let mut val_slashed = Zero::zero();
+	let mut reward_payout = BalanceOf::<T>::zero();
+	let mut val_slashed = BalanceOf::<T>::zero();
 
 	// is the slash amount here a maximum for the era?
 	// todo(ank4n): this is not correct. Validator slash should be slashed only once.

@@ -1510,10 +1510,6 @@ where
 		// SlashDeferDuration.
 
 		// todo(ank4n): Benchmark this properly.
-
-		// Simple: One offence processed per block.
-		// Complex: Based on exposure page size, multiple offences processed per block.
-
 		// Find the era to which offence belongs.
 		let active_era = {
 			let active_era = ActiveEra::<T>::get();
@@ -1550,32 +1546,45 @@ where
 			let validator = &details.offender;
 			// Skip if the validator is invulnerable.
 			if invulnerables.contains(&validator) {
-				return Weight::default()
+				continue
+			}
+
+			let own_slash = <ErasStakersOverview<T>>::get(&offence_era, validator).map(|s| s.own);
+			if own_slash.is_none() {
+				// validator exposure not found, discard.
+				continue
+			}
+			let own_slash = own_slash.expect("value checked not to be `None`; qed");
+
+
+			let prior_slash_p = ValidatorSlashInEra::<T>::get(offence_era, validator)
+				.map_or(Zero::zero(), |(prior_slash_proportion, _)| prior_slash_proportion);
+
+			if slash_fraction.deconstruct() > prior_slash_p.deconstruct() {
+				ValidatorSlashInEra::<T>::insert(
+					offence_era,
+					validator,
+					(slash_fraction, own_slash),
+				);
+			} else {
+				// If the slash fraction is less than the prior slash fraction in the offence era,
+				// then we don't need to do anything.
+				continue
 			}
 
 			let pages = <EraInfo<T>>::get_page_count(offence_era, validator);
-			// build an offence record
-			let offence_record = OffenceRecord {
+
+			// This might overwrite an existing offence record. However, this is acceptable
+			// because the only scenario where we should avoid overwriting is when the new
+			// slash fraction is lower than the prior slash fraction. In that case, we exit early
+			// before reaching this code path.
+			OffenceQueue::<T>::insert(offence_era, validator, OffenceRecord {
 				reporter: details.reporters.first().cloned(),
 				reported_era: active_era,
 				offence_era,
 				exposure_page: pages - 1, // Process last page first.
 				slash_fraction: *slash_fraction,
-			};
-
-			OffenceQueue::<T>::mutate(offence_era, validator, |entry| {
-				match entry {
-					Some(existing) => {
-						// Overwrite only if the new `slash_fraction` is higher.
-						if *slash_fraction > existing.slash_fraction {
-							*existing = offence_record;
-						}
-					},
-					None => {
-						// Insert a new record if none exists.
-						*entry = Some(offence_record);
-					},
-				}
+				prior_slash_fraction: prior_slash_p,
 			});
 		}
 
