@@ -723,8 +723,13 @@ pub mod pallet {
 	/// All unapplied slashes that are queued for later.
 	#[pallet::storage]
 	#[pallet::unbounded]
-	pub type UnappliedSlashes<T: Config> =
-		StorageMap<_, Twox64Concat, EraIndex, Vec<UnappliedSlash<T>>, ValueQuery>;
+	pub type UnappliedSlashes<T: Config> = StorageDoubleMap<
+		_,
+		Twox64Concat, EraIndex,
+		Twox64Concat, (T::AccountId, u32), // Second key: (Validator, Page Index)
+		UnappliedSlash<T>,
+		OptionQuery,
+	>;
 
 	/// A mapping from still-bonded eras to the first session index of that era.
 	///
@@ -1828,16 +1833,17 @@ pub mod pallet {
 			ensure!(!slash_indices.is_empty(), Error::<T>::EmptyTargets);
 			ensure!(is_sorted_and_unique(&slash_indices), Error::<T>::NotSortedAndUnique);
 
-			let mut unapplied = UnappliedSlashes::<T>::get(&era);
-			let last_item = slash_indices[slash_indices.len() - 1];
-			ensure!((last_item as usize) < unapplied.len(), Error::<T>::InvalidSlashIndex);
-
-			for (removed, index) in slash_indices.into_iter().enumerate() {
-				let index = (index as usize) - removed;
-				unapplied.remove(index);
-			}
-
-			UnappliedSlashes::<T>::insert(&era, &unapplied);
+			// todo(ank4n): Refactor this to take vec of (stash, page), and kill `UnappliedSlashes`.
+			// let mut unapplied = UnappliedSlashes::<T>::get(&era);
+			// let last_item = slash_indices[slash_indices.len() - 1];
+			// ensure!((last_item as usize) < unapplied.len(), Error::<T>::InvalidSlashIndex);
+			//
+			// for (removed, index) in slash_indices.into_iter().enumerate() {
+			// 	let index = (index as usize) - removed;
+			// 	unapplied.remove(index);
+			// }
+			//
+			// UnappliedSlashes::<T>::insert(&era, &unapplied);
 			Ok(())
 		}
 
