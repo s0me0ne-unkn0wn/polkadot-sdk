@@ -829,11 +829,7 @@ impl<T: Config> Pallet<T> {
 	fn apply_unapplied_slashes(active_era: EraIndex) {
 		// todo(ank4n): Make it multi block.
 		let era_slashes = UnappliedSlashes::<T>::drain_prefix(&active_era);
-		log!(
-			debug,
-			"found slashes scheduled to be executed in era {:?}",
-			active_era,
-		);
+		log!(debug, "found slashes scheduled to be executed in era {:?}", active_era,);
 		for (_, slash) in era_slashes {
 			let slash_era = active_era.saturating_sub(T::SlashDeferDuration::get());
 			slashing::apply_slash::<T>(slash, slash_era);

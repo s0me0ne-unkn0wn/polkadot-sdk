@@ -347,8 +347,7 @@ pub(crate) fn process_offence<T: Config>() {
 	let slash_page = offence_record.exposure_page;
 	// The validator is slashed only once per offence, specifically along with the last page of its
 	// exposure.
-	let should_slash_validator =
-		slash_page == exposure.exposure_metadata.page_count - 1;
+	let should_slash_validator = slash_page == exposure.exposure_metadata.page_count - 1;
 
 	let slash_defer_duration = T::SlashDeferDuration::get();
 	let slash_era = offence_era.saturating_add(slash_defer_duration);
@@ -416,7 +415,8 @@ pub(crate) fn compute_slash<T: Config>(params: SlashParams<T>) -> Option<Unappli
 
 	let mut nominators_slashed = Vec::new();
 
-	let (nom_slashed, nom_reward_payout) = slash_nominators::<T>(params.clone(), &mut nominators_slashed);
+	let (nom_slashed, nom_reward_payout) =
+		slash_nominators::<T>(params.clone(), &mut nominators_slashed);
 	reward_payout += nom_reward_payout;
 
 	(nom_slashed + val_slashed > Zero::zero()).then_some(UnappliedSlash {
@@ -544,7 +544,7 @@ fn slash_validator<T: Config>(params: SlashParams<T>) -> (BalanceOf<T>, BalanceO
 fn slash_nominators<T: Config>(
 	params: SlashParams<T>,
 	nominators_slashed: &mut Vec<(T::AccountId, BalanceOf<T>)>,
-) ->( BalanceOf<T>, BalanceOf<T>) {
+) -> (BalanceOf<T>, BalanceOf<T>) {
 	let mut reward_payout = BalanceOf::<T>::zero();
 	let mut total_slashed = BalanceOf::<T>::zero();
 

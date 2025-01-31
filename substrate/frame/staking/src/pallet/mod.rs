@@ -725,8 +725,10 @@ pub mod pallet {
 	#[pallet::unbounded]
 	pub type UnappliedSlashes<T: Config> = StorageDoubleMap<
 		_,
-		Twox64Concat, EraIndex,
-		Twox64Concat, (T::AccountId, u32), // Second key: (Validator, Page Index)
+		Twox64Concat,
+		EraIndex,
+		Twox64Concat,
+		(T::AccountId, u32), // Second key: (Validator, Page Index)
 		UnappliedSlash<T>,
 		OptionQuery,
 	>;
