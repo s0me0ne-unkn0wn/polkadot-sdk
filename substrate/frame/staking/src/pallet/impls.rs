@@ -1572,6 +1572,9 @@ where
 				continue;
 			};
 
+			// add offending validator to the set of offenders.
+			slashing::add_offending_validator::<T>(validator, *slash_fraction, offence_era);
+
 			let prior_slash_fraction = ValidatorSlashInEra::<T>::get(offence_era, validator)
 				.map_or(Zero::zero(), |(f, _)| f);
 
@@ -1601,6 +1604,14 @@ where
 						fraction: *slash_fraction,
 						slash_era: offence_era,
 					});
+				} else {
+					log!(
+						debug,
+						"🦹 ignored slash for {}: {:?} (existing prior is larger: {:?})",
+						validator,
+						slash_fraction,
+						prior_slash_fraction,
+					);
 				}
 			} else if slash_fraction.deconstruct() > prior_slash_fraction.deconstruct() {
 				ValidatorSlashInEra::<T>::insert(
@@ -1645,6 +1656,14 @@ where
 				log!(
 					debug,
 					"🦹 queued slash for {}: {:?} (prior: {:?})",
+					validator,
+					slash_fraction,
+					prior_slash_fraction,
+				);
+			} else {
+				log!(
+					debug,
+					"🦹 ignored slash for {}: {:?} (already slashed in era with prior: {:?})",
 					validator,
 					slash_fraction,
 					prior_slash_fraction,

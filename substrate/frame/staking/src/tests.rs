@@ -2556,7 +2556,7 @@ fn offence_deselects_validator_even_when_slash_is_zero() {
 			assert!(<Validators<Test>>::contains_key(11));
 
 			on_offence_now(
-				&[OffenceDetails { offender: 1, reporters: vec![] }],
+				&[OffenceDetails { offender: 11, reporters: vec![] }],
 				&[Perbill::from_percent(0)],
 			);
 
@@ -2600,9 +2600,11 @@ fn validator_is_not_disabled_for_an_offence_in_previous_era() {
 			assert!(Session::validators().contains(&11));
 
 			on_offence_now(
-				&[OffenceDetails { offender: 1, reporters: vec![] }],
+				&[OffenceDetails { offender: 11, reporters: vec![] }],
 				&[Perbill::from_percent(0)],
 			);
+			// advance to next block so offences are processed.
+			next_block();
 
 			assert_eq!(ForceEra::<Test>::get(), Forcing::NotForcing);
 			assert!(is_disabled(11));
@@ -3647,6 +3649,11 @@ fn disabled_validators_are_kept_disabled_for_whole_era() {
 				&[OffenceDetails { offender: 21, reporters: vec![] }],
 				&[Perbill::from_percent(25)],
 			);
+
+			// check how many pages of exposure 21 has.
+			assert_eq!(EraInfo::<Test>::get_page_count(1, &21), 1);
+			// next block will process the offence and apply slash.
+			next_block();
 
 			// nominations are not updated.
 			assert_eq!(Nominators::<Test>::get(101).unwrap().targets, vec![11, 21]);

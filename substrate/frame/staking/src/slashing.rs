@@ -484,17 +484,15 @@ fn kick_out_if_recent<T: Config>(params: SlashParams<T>) {
 		// Check https://github.com/paritytech/polkadot-sdk/issues/2650 for details
 		spans.end_span(params.now);
 	}
-
-	add_offending_validator::<T>(&params);
 }
 
 /// Inform the [`DisablingStrategy`] implementation about the new offender and disable the list of
 /// validators provided by [`decision`].
-fn add_offending_validator<T: Config>(params: &SlashParams<T>) {
+pub(crate) fn add_offending_validator<T: Config>(stash: &T::AccountId, slash: Perbill, offence_era: EraIndex) {
 	DisabledValidators::<T>::mutate(|disabled| {
-		let new_severity = OffenceSeverity(params.slash);
+		let new_severity = OffenceSeverity(slash);
 		let decision =
-			T::DisablingStrategy::decision(params.stash, new_severity, params.slash_era, &disabled);
+			T::DisablingStrategy::decision(stash, new_severity, offence_era, &disabled);
 
 		if let Some(offender_idx) = decision.disable {
 			// Check if the offender is already disabled
@@ -513,7 +511,7 @@ fn add_offending_validator<T: Config>(params: &SlashParams<T>) {
 					T::SessionInterface::disable_validator(offender_idx);
 					// Emit event that a validator got disabled
 					<Pallet<T>>::deposit_event(super::Event::<T>::ValidatorDisabled {
-						stash: params.stash.clone(),
+						stash: stash.clone(),
 					});
 				},
 			}
@@ -570,8 +568,6 @@ fn slash_validator<T: Config>(params: SlashParams<T>) -> (BalanceOf<T>, BalanceO
 			spans.end_span(params.now);
 		}
 	}
-
-	add_offending_validator::<T>(&params);
 
 	(val_slashed, reward_payout)
 }
