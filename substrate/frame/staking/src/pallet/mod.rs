@@ -1030,6 +1030,8 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_now: BlockNumberFor<T>) -> Weight {
+			// todo(ank4n): add the weight of `process_offences` here.
+			slashing::process_offence::<T>();
 			// just return the weight of the on_finalize.
 			T::DbWeight::get().reads(1)
 		}

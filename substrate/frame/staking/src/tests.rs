@@ -3015,8 +3015,9 @@ fn deferred_slashes_are_deferred() {
 
 		System::reset_events();
 
+		println!("-- on_offence_now 1");
 		on_offence_now(
-			&[OffenceDetails { offender: 1, reporters: vec![] }],
+			&[OffenceDetails { offender: 11, reporters: vec![] }],
 			&[Perbill::from_percent(10)],
 		);
 
@@ -3031,13 +3032,21 @@ fn deferred_slashes_are_deferred() {
 		assert_eq!(asset::stakeable_balance::<Test>(&11), 1000);
 		assert_eq!(asset::stakeable_balance::<Test>(&101), 2000);
 
-		mock::start_active_era(3);
+		assert!(matches!(
+			staking_events_since_last_call().as_slice(),
+			&[
+				Event::SlashReported { validator: 11, slash_era: 1, .. },
+				Event::SlashComputed { offence_era: 1, slash_era: 3, page: 0, .. },
+				Event::StakersElected,
+				..,
+			]
+		));
 
-		assert_eq!(asset::stakeable_balance::<Test>(&11), 1000);
-		assert_eq!(asset::stakeable_balance::<Test>(&101), 2000);
+		mock::start_active_era(3);
+		// at this point, the slash from Era 1 gets applied in multiple blocks.
 
 		// at the start of era 4, slashes from era 1 are processed,
-		// after being deferred for at least 2 full eras.
+		// after being deferred for at least (slash_defer_duration=2) - 1 full eras.
 		mock::start_active_era(4);
 
 		assert_eq!(asset::stakeable_balance::<Test>(&11), 900);
@@ -3046,11 +3055,15 @@ fn deferred_slashes_are_deferred() {
 		assert!(matches!(
 			staking_events_since_last_call().as_slice(),
 			&[
-				Event::SlashReported { validator: 11, slash_era: 1, .. },
+				// era 3 elections
 				Event::StakersElected,
-				..,
+				Event::EraPaid { .. },
+				// slashes applied from era 1 between era 3 and 4.
 				Event::Slashed { staker: 11, amount: 100 },
-				Event::Slashed { staker: 101, amount: 12 }
+				Event::Slashed { staker: 101, amount: 12 },
+				// era 4 elections
+				Event::StakersElected,
+				Event::EraPaid { .. },
 			]
 		));
 	})

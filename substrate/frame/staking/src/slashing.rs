@@ -283,6 +283,12 @@ fn next_offence<T: Config>() -> Option<(EraIndex, T::AccountId, OffenceRecord<T:
 	let processing_offence = ProcessingOffence::<T>::get();
 
 	if let Some((offence_era, offender, offence_record)) = processing_offence {
+		// If the exposure page is 0, then the offence has been processed.
+		if offence_record.exposure_page == 0 {
+			ProcessingOffence::<T>::kill();
+			return Some((offence_era, offender, offence_record))
+		}
+
 		// Update the next page.
 		ProcessingOffence::<T>::put((
 			offence_era,
@@ -305,15 +311,18 @@ fn next_offence<T: Config>() -> Option<(EraIndex, T::AccountId, OffenceRecord<T:
 	let next_offence = offence_iter.next();
 
 	if let Some((ref validator, ref offence_record)) = next_offence {
-		// update processing offence with the next page.
-		ProcessingOffence::<T>::put((
-			oldest_era,
-			validator.clone(),
-			OffenceRecord {
-				exposure_page: offence_record.exposure_page.defensive_saturating_sub(1),
-				..offence_record.clone()
-			},
-		));
+		// Update the processing offence if the offence is multi-page.
+		if offence_record.exposure_page > 0 {
+			// update processing offence with the next page.
+			ProcessingOffence::<T>::put((
+				oldest_era,
+				validator.clone(),
+				OffenceRecord {
+					exposure_page: offence_record.exposure_page.defensive_saturating_sub(1),
+					..offence_record.clone()
+				},
+			));
+		}
 
 		// Remove from `OffenceQueue`
 		OffenceQueue::<T>::remove(oldest_era, &validator);
@@ -331,9 +340,16 @@ fn next_offence<T: Config>() -> Option<(EraIndex, T::AccountId, OffenceRecord<T:
 /// Infallible function to process an offence.
 pub(crate) fn process_offence<T: Config>() {
 	let Some((offence_era, offender, offence_record)) = next_offence::<T>() else {
-		// No offence to process
 		return;
 	};
+
+	log!(
+		debug,
+		"🦹 Processing offence for {:?} in era {:?} with slash fraction {:?}",
+		offender,
+		offence_era,
+		offence_record.slash_fraction,
+	);
 
 	let reward_proportion = SlashRewardFraction::<T>::get();
 	let Some(exposure) =
@@ -364,6 +380,13 @@ pub(crate) fn process_offence<T: Config>() {
 		now: offence_record.reported_era,
 		reward_proportion,
 	}) else {
+		log!(
+			debug,
+			"🦹 Slash of {:?}% happened in {:?} (reported in {:?}) is discarded, as could not compute slash",
+			offence_record.slash_fraction,
+			offence_era,
+			offence_record.reported_era,
+		);
 		// No slash to apply. Discard.
 		return
 	};
@@ -375,11 +398,27 @@ pub(crate) fn process_offence<T: Config>() {
 		page: slash_page,
 	});
 
+	log!(
+		debug,
+		"🦹 Slash of {:?}% happened in {:?} (reported in {:?}) is computed",
+		offence_record.slash_fraction,
+		offence_era,
+		offence_record.reported_era,
+	);
+
 	// add the reporter to the unapplied slash.
 	unapplied.reporter = offence_record.reporter;
 
 	if slash_defer_duration == 0 {
 		// Apply right away.
+		log!(
+			debug,
+			"🦹 applying slash instantly of {:?}% happened in {:?} (reported in {:?}) to {:?}",
+			offence_record.slash_fraction,
+			offence_era,
+			offence_record.reported_era,
+			offender,
+		);
 		apply_slash::<T>(unapplied, offence_era);
 	} else {
 		// Historical Note: Previously, with BondingDuration = 28 and SlashDeferDuration = 27,
@@ -389,7 +428,7 @@ pub(crate) fn process_offence<T: Config>() {
 		// `offence_era`.
 		log!(
 			debug,
-			"deferring slash of {:?}% happened in {:?} (reported in {:?}) to {:?}",
+			"🦹 deferring slash of {:?}% happened in {:?} (reported in {:?}) to {:?}",
 			offence_record.slash_fraction,
 			offence_era,
 			offence_record.reported_era,
@@ -414,7 +453,6 @@ pub(crate) fn compute_slash<T: Config>(params: SlashParams<T>) -> Option<Unappli
 		.unwrap_or((Zero::zero(), Zero::zero()));
 
 	let mut nominators_slashed = Vec::new();
-
 	let (nom_slashed, nom_reward_payout) =
 		slash_nominators::<T>(params.clone(), &mut nominators_slashed);
 	reward_payout += nom_reward_payout;

@@ -829,8 +829,13 @@ impl<T: Config> Pallet<T> {
 	fn apply_unapplied_slashes(active_era: EraIndex) {
 		// todo(ank4n): Make it multi block.
 		let era_slashes = UnappliedSlashes::<T>::drain_prefix(&active_era);
-		log!(debug, "found slashes scheduled to be executed in era {:?}", active_era,);
 		for (_, slash) in era_slashes {
+			log!(
+				debug,
+				"🦹 found slashes {:?} scheduled to be executed in era {:?}",
+				slash,
+				active_era,
+			);
 			let slash_era = active_era.saturating_sub(T::SlashDeferDuration::get());
 			slashing::apply_slash::<T>(slash, slash_era);
 		}
@@ -1506,8 +1511,17 @@ where
 		slash_fractions: &[Perbill],
 		slash_session: SessionIndex,
 	) -> Weight {
+		log!(
+			debug,
+			"🦹 on_offence: offenders={:?}, slash_fractions={:?}, slash_session={}",
+			offenders,
+			slash_fractions,
+			slash_session,
+		);
+
 		// Find the era to which offence belongs.
 		let Some(active_era) = ActiveEra::<T>::get() else {
+			log!(warn, "🦹 on_offence: no active era; ignoring offence");
 			return Weight::default();
 		};
 		let active_era_start_session =
@@ -1529,6 +1543,7 @@ where
 				None => {
 					// defensive: this implies offence is for a discarded era, and should already be
 					// filtered out.
+					log!(warn, "🦹 on_offence: no era found for slash_session; ignoring offence");
 					return Weight::default()
 				},
 			}
@@ -1540,6 +1555,7 @@ where
 			let validator = &details.offender;
 			// Skip if the validator is invulnerable.
 			if invulnerables.contains(&validator) {
+				log!(debug, "🦹 on_offence: {:?} is invulnerable; ignoring offence", validator);
 				continue
 			}
 
@@ -1547,6 +1563,12 @@ where
 			else {
 				// defensive: this implies offence is for a discarded era, and should already be
 				// filtered out.
+				log!(
+					warn,
+					"🦹 on_offence: no exposure found for {:?} in era {}; ignoring offence",
+					validator,
+					offence_era
+				);
 				continue;
 			};
 
@@ -1564,6 +1586,14 @@ where
 							slash_fraction: *slash_fraction,
 							..existing
 						},
+					);
+
+					log!(
+						debug,
+						"🦹 updated slash for {}: {:?} (prior: {:?})",
+						validator,
+						slash_fraction,
+						prior_slash_fraction,
 					);
 
 					Self::deposit_event(Event::<T>::SlashReported {
@@ -1592,11 +1622,33 @@ where
 					},
 				);
 
+				OffenceQueueEras::<T>::mutate(|q| {
+					if let Some(eras) = q {
+						log!(debug, "🦹 inserting offence era {} into existing queue", offence_era);
+						eras.binary_search(&offence_era)
+							.err()
+							.map(|idx| eras.try_insert(idx, offence_era).defensive());
+					} else {
+						let mut eras = BoundedVec::default();
+						log!(debug, "🦹 inserting offence era {} into empty queue", offence_era);
+						let _ = eras.try_push(offence_era).defensive();
+						*q = Some(eras);
+					}
+				});
+
 				Self::deposit_event(Event::<T>::SlashReported {
 					validator: validator.clone(),
 					fraction: *slash_fraction,
 					slash_era: offence_era,
 				});
+
+				log!(
+					debug,
+					"🦹 queued slash for {}: {:?} (prior: {:?})",
+					validator,
+					slash_fraction,
+					prior_slash_fraction,
+				);
 			}
 		}
 
