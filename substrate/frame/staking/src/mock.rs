@@ -625,6 +625,11 @@ pub(crate) fn run_to_block(n: BlockNumber) {
 	);
 }
 
+/// Progress to the next block.
+pub(crate) fn next_block() {
+	run_to_block(System::block_number() + 1);
+}
+
 /// Progresses from the current block number (whatever that may be) to the `P * session_index + 1`.
 pub(crate) fn start_session(end_session_idx: SessionIndex) {
 	let period = Period::get();
