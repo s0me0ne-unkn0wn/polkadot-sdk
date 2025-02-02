@@ -363,7 +363,9 @@ pub(crate) fn process_offence<T: Config>() {
 	let slash_page = offence_record.exposure_page;
 	// The validator is slashed only once per offence, specifically along with the last page of its
 	// exposure.
-	let should_slash_validator = slash_page == exposure.exposure_metadata.page_count - 1;
+	let exposure_pages = exposure.exposure_metadata.page_count;
+	let should_slash_validator =
+		exposure_pages == 0 || slash_page == exposure.exposure_metadata.page_count - 1;
 
 	let slash_defer_duration = T::SlashDeferDuration::get();
 	let slash_era = offence_era.saturating_add(slash_defer_duration);

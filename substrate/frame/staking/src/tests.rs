@@ -3459,6 +3459,8 @@ fn non_slashable_offence_disables_validator() {
 				&[OffenceDetails { offender: 21, reporters: vec![] }],
 				&[Perbill::from_percent(25)],
 			);
+			// advance block to trigger the slash
+			next_block();
 
 			// it DOES NOT affect the nominator.
 			assert_eq!(Nominators::<Test>::get(101).unwrap().targets, vec![11, 21]);
@@ -8666,10 +8668,15 @@ fn do_not_reenable_higher_offenders_mock() {
 				&[OffenceDetails { offender: 11, reporters: vec![] }],
 				&[Perbill::from_percent(50)],
 			);
+			// advance block to trigger slashing
+			next_block();
+
 			on_offence_now(
 				&[OffenceDetails { offender: 21, reporters: vec![] }],
 				&[Perbill::from_percent(50)],
 			);
+			// advance block to trigger slashing
+			next_block();
 
 			// both validators should be disabled
 			assert!(is_disabled(11));
@@ -8680,6 +8687,8 @@ fn do_not_reenable_higher_offenders_mock() {
 				&[OffenceDetails { offender: 31, reporters: vec![] }],
 				&[Perbill::from_percent(10)],
 			);
+			// advance block to trigger slashing
+			next_block();
 
 			// First and second offenders are still disabled
 			assert!(is_disabled(11));
@@ -8698,6 +8707,7 @@ fn do_not_reenable_higher_offenders_mock() {
 						slash_era: 1
 					},
 					Event::ValidatorDisabled { stash: 11 },
+					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 11, page: 0 },
 					Event::Slashed { staker: 11, amount: 500 },
 					Event::Slashed { staker: 101, amount: 62 },
 					Event::SlashReported {
@@ -8706,6 +8716,7 @@ fn do_not_reenable_higher_offenders_mock() {
 						slash_era: 1
 					},
 					Event::ValidatorDisabled { stash: 21 },
+					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 21, page: 0 },
 					Event::Slashed { staker: 21, amount: 500 },
 					Event::Slashed { staker: 101, amount: 187 },
 					Event::SlashReported {
@@ -8713,6 +8724,7 @@ fn do_not_reenable_higher_offenders_mock() {
 						fraction: Perbill::from_percent(10),
 						slash_era: 1
 					},
+					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 31, page: 0 },
 					Event::Slashed { staker: 31, amount: 50 },
 				]
 			);

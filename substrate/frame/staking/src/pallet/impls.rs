@@ -1572,6 +1572,12 @@ where
 				continue;
 			};
 
+			Self::deposit_event(Event::<T>::SlashReported {
+				validator: validator.clone(),
+				fraction: *slash_fraction,
+				slash_era: offence_era,
+			});
+
 			// add offending validator to the set of offenders.
 			slashing::add_offending_validator::<T>(validator, *slash_fraction, offence_era);
 
@@ -1598,12 +1604,6 @@ where
 						slash_fraction,
 						prior_slash_fraction,
 					);
-
-					Self::deposit_event(Event::<T>::SlashReported {
-						validator: validator.clone(),
-						fraction: *slash_fraction,
-						slash_era: offence_era,
-					});
 				} else {
 					log!(
 						debug,
@@ -1627,7 +1627,8 @@ where
 						reporter: details.reporters.first().cloned(),
 						reported_era: active_era.index,
 						offence_era,
-						exposure_page: exposure_overview.page_count - 1,
+						// there are cases of validator with no exposure, so we default to 1.
+						exposure_page: exposure_overview.page_count.saturating_sub(1),
 						slash_fraction: *slash_fraction,
 						prior_slash_fraction,
 					},
@@ -1645,12 +1646,6 @@ where
 						let _ = eras.try_push(offence_era).defensive();
 						*q = Some(eras);
 					}
-				});
-
-				Self::deposit_event(Event::<T>::SlashReported {
-					validator: validator.clone(),
-					fraction: *slash_fraction,
-					slash_era: offence_era,
 				});
 
 				log!(
