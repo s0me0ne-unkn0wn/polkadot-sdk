@@ -565,8 +565,6 @@ impl<T: Config> Pallet<T> {
 				}
 			}
 		});
-
-		Self::apply_unapplied_slashes(active_era);
 	}
 
 	/// Compute payout for era.
@@ -826,18 +824,20 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Apply previously-unapplied slashes on the beginning of a new era, after a delay.
-	fn apply_unapplied_slashes(active_era: EraIndex) {
+	pub(crate) fn apply_unapplied_slashes(active_era: EraIndex) {
 		// todo(ank4n): Make it multi block.
-		let era_slashes = UnappliedSlashes::<T>::drain_prefix(&active_era);
-		for (_, slash) in era_slashes {
+		let mut slashes = UnappliedSlashes::<T>::iter_prefix(&active_era).take(1);
+		if let Some((key, slash)) = slashes.next() {
 			log!(
 				debug,
-				"🦹 found slashes {:?} scheduled to be executed in era {:?}",
+				"🦹 found slash {:?} scheduled to be executed in era {:?}",
 				slash,
 				active_era,
 			);
 			let slash_era = active_era.saturating_sub(T::SlashDeferDuration::get());
 			slashing::apply_slash::<T>(slash, slash_era);
+			// remove the slash
+			UnappliedSlashes::<T>::remove(&active_era, &key);
 		}
 	}
 
@@ -1575,7 +1575,7 @@ where
 			let prior_slash_fraction = ValidatorSlashInEra::<T>::get(offence_era, validator)
 				.map_or(Zero::zero(), |(f, _)| f);
 
-			if let Some(mut existing) = OffenceQueue::<T>::get(offence_era, validator) {
+			if let Some(existing) = OffenceQueue::<T>::get(offence_era, validator) {
 				if slash_fraction.deconstruct() > existing.slash_fraction.deconstruct() {
 					OffenceQueue::<T>::insert(
 						offence_era,

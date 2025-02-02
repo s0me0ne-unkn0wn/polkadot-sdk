@@ -3015,7 +3015,6 @@ fn deferred_slashes_are_deferred() {
 
 		System::reset_events();
 
-		println!("-- on_offence_now 1");
 		on_offence_now(
 			&[OffenceDetails { offender: 11, reporters: vec![] }],
 			&[Perbill::from_percent(10)],

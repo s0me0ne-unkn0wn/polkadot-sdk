@@ -1030,8 +1030,13 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_now: BlockNumberFor<T>) -> Weight {
-			// todo(ank4n): add the weight of `process_offences` here.
+			// todo(ank4n): add the weight of `process_offences` and apply unapplied slash here.
 			slashing::process_offence::<T>();
+
+			if let Some(active_era) = ActiveEra::<T>::get() {
+				Self::apply_unapplied_slashes(active_era.index);
+			}
+
 			// just return the weight of the on_finalize.
 			T::DbWeight::get().reads(1)
 		}
