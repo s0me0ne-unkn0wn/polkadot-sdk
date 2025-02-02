@@ -2604,7 +2604,7 @@ fn validator_is_not_disabled_for_an_offence_in_previous_era() {
 				&[Perbill::from_percent(0)],
 			);
 			// advance to next block so offences are processed.
-			next_block();
+			advance_blocks(1);
 
 			assert_eq!(ForceEra::<Test>::get(), Forcing::NotForcing);
 			assert!(is_disabled(11));
@@ -2724,11 +2724,13 @@ fn invulnerables_are_not_slashed() {
 
 		on_offence_now(
 			&[
-				OffenceDetails { offender: 1, reporters: vec![] },
-				OffenceDetails { offender: 2, reporters: vec![] },
+				OffenceDetails { offender: 11, reporters: vec![] },
+				OffenceDetails { offender: 21, reporters: vec![] },
 			],
 			&[Perbill::from_percent(50), Perbill::from_percent(20)],
 		);
+		// add a two new block to process the offence.
+		advance_blocks(2);
 
 		// The validator 11 hasn't been slashed, but 21 has been.
 		assert_eq!(asset::stakeable_balance::<Test>(&11), 1000);
@@ -3052,7 +3054,7 @@ fn deferred_slashes_are_deferred() {
 		assert_eq!(asset::stakeable_balance::<Test>(&11), 1000);
 		assert_eq!(asset::stakeable_balance::<Test>(&101), 2000);
 		// run next block
-		next_block();
+		advance_blocks(1);
 		assert_eq!(asset::stakeable_balance::<Test>(&11), 900);
 		assert_eq!(asset::stakeable_balance::<Test>(&101), 2000 - (nominated_value / 10));
 
@@ -3460,7 +3462,7 @@ fn non_slashable_offence_disables_validator() {
 				&[Perbill::from_percent(25)],
 			);
 			// advance block to trigger the slash
-			next_block();
+			advance_blocks(1);
 
 			// it DOES NOT affect the nominator.
 			assert_eq!(Nominators::<Test>::get(101).unwrap().targets, vec![11, 21]);
@@ -3655,7 +3657,7 @@ fn disabled_validators_are_kept_disabled_for_whole_era() {
 			// check how many pages of exposure 21 has.
 			assert_eq!(EraInfo::<Test>::get_page_count(1, &21), 1);
 			// next block will process the offence and apply slash.
-			next_block();
+			advance_blocks(1);
 
 			// nominations are not updated.
 			assert_eq!(Nominators::<Test>::get(101).unwrap().targets, vec![11, 21]);
@@ -8665,34 +8667,21 @@ fn do_not_reenable_higher_offenders_mock() {
 
 			// offence with a major slash
 			on_offence_now(
-				&[OffenceDetails { offender: 11, reporters: vec![] }],
-				&[Perbill::from_percent(50)],
-			);
-			// advance block to trigger slashing
-			next_block();
+				&[OffenceDetails { offender: 11, reporters: vec![] },
+					OffenceDetails { offender: 21, reporters: vec![] },
+					OffenceDetails { offender: 31, reporters: vec![] }
+				],
+				&[Perbill::from_percent(50),
+					Perbill::from_percent(50),
+					Perbill::from_percent(10)]);
 
-			on_offence_now(
-				&[OffenceDetails { offender: 21, reporters: vec![] }],
-				&[Perbill::from_percent(50)],
-			);
-			// advance block to trigger slashing
-			next_block();
+			// advance blocks to trigger slashing
+			advance_blocks(3);
 
 			// both validators should be disabled
 			assert!(is_disabled(11));
 			assert!(is_disabled(21));
 
-			// offence with a minor slash
-			on_offence_now(
-				&[OffenceDetails { offender: 31, reporters: vec![] }],
-				&[Perbill::from_percent(10)],
-			);
-			// advance block to trigger slashing
-			next_block();
-
-			// First and second offenders are still disabled
-			assert!(is_disabled(11));
-			assert!(is_disabled(21));
 			// New offender is not disabled as limit is reached and his prio is lower
 			assert!(!is_disabled(31));
 
@@ -8707,18 +8696,12 @@ fn do_not_reenable_higher_offenders_mock() {
 						slash_era: 1
 					},
 					Event::ValidatorDisabled { stash: 11 },
-					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 11, page: 0 },
-					Event::Slashed { staker: 11, amount: 500 },
-					Event::Slashed { staker: 101, amount: 62 },
 					Event::SlashReported {
 						validator: 21,
 						fraction: Perbill::from_percent(50),
 						slash_era: 1
 					},
 					Event::ValidatorDisabled { stash: 21 },
-					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 21, page: 0 },
-					Event::Slashed { staker: 21, amount: 500 },
-					Event::Slashed { staker: 101, amount: 187 },
 					Event::SlashReported {
 						validator: 31,
 						fraction: Perbill::from_percent(10),
@@ -8726,6 +8709,13 @@ fn do_not_reenable_higher_offenders_mock() {
 					},
 					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 31, page: 0 },
 					Event::Slashed { staker: 31, amount: 50 },
+					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 21, page: 0 },
+					Event::Slashed { staker: 21, amount: 500 },
+					Event::Slashed { staker: 101, amount: 187 },
+					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 11, page: 0 },
+					Event::Slashed { staker: 11, amount: 500 },
+					Event::Slashed { staker: 101, amount: 62 },
+
 				]
 			);
 		});

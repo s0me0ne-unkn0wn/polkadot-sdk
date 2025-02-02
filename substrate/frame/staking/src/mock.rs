@@ -625,9 +625,9 @@ pub(crate) fn run_to_block(n: BlockNumber) {
 	);
 }
 
-/// Progress to the next block.
-pub(crate) fn next_block() {
-	run_to_block(System::block_number() + 1);
+/// Progress by n block.
+pub(crate) fn advance_blocks(n: u64) {
+	run_to_block(System::block_number() + n);
 }
 
 /// Progresses from the current block number (whatever that may be) to the `P * session_index + 1`.
