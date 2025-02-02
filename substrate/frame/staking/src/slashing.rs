@@ -488,11 +488,14 @@ fn kick_out_if_recent<T: Config>(params: SlashParams<T>) {
 
 /// Inform the [`DisablingStrategy`] implementation about the new offender and disable the list of
 /// validators provided by [`decision`].
-pub(crate) fn add_offending_validator<T: Config>(stash: &T::AccountId, slash: Perbill, offence_era: EraIndex) {
+pub(crate) fn add_offending_validator<T: Config>(
+	stash: &T::AccountId,
+	slash: Perbill,
+	offence_era: EraIndex,
+) {
 	DisabledValidators::<T>::mutate(|disabled| {
 		let new_severity = OffenceSeverity(slash);
-		let decision =
-			T::DisablingStrategy::decision(stash, new_severity, offence_era, &disabled);
+		let decision = T::DisablingStrategy::decision(stash, new_severity, offence_era, &disabled);
 
 		if let Some(offender_idx) = decision.disable {
 			// Check if the offender is already disabled
