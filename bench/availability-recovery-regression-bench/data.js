@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738367304435,
+  "lastUpdate": 1738577591050,
   "repoUrl": "https://github.com/paritytech/polkadot-sdk",
   "entries": {
     "availability-recovery-regression-bench": [
@@ -41351,6 +41351,50 @@ window.BENCHMARK_DATA = {
           {
             "name": "test-environment",
             "value": 0.23539028059999997,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alin@parity.io",
+            "name": "Alin Dima",
+            "username": "alindima"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4cd07c56378291fddb9fceab3b508cf99034126a",
+          "message": "deprecate AsyncBackingParams (#7254)\n\nPart of https://github.com/paritytech/polkadot-sdk/issues/5079.\n\nRemoves all usage of the static async backing params, replacing them\nwith dynamically computed equivalent values (based on the claim queue\nand scheduling lookahead).\n\nAdds a new runtime API for querying the scheduling lookahead value. If\nnot present, falls back to 3 (the default value that is backwards\ncompatible with values we have on production networks for\nallowed_ancestry_len)\n\nAlso resolves most of\nhttps://github.com/paritytech/polkadot-sdk/issues/4447, removing code\nthat handles async backing not yet being enabled.\nWhile doing this, I removed the support for collation protocol version 1\non collators, as it only worked for leaves not supporting async backing\n(which are none).\nI also unhooked the legacy v1 statement-distribution (for the same\nreason as above). That subsystem is basically dead code now, so I had to\nremove some of its tests as they would no longer pass (since the\nsubsystem no longer sends messages to the legacy variant). I did not\nremove the entire legacy subsystem yet, as that would pollute this PR\ntoo much. We can remove the entire v1 and v2 validation protocols in a\nfollow up PR.\n\nIn another PR: remove test files with names `prospective_parachains`\n(it'd pollute this PR if we do now)\n\nTODO:\n- [x] add deprecation warnings\n- [x] prdoc\n\n---------\n\nCo-authored-by: cmd[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2025-02-03T09:01:15Z",
+          "tree_id": "59d7a1f1357bdfdea64825e74e9e190c719369b1",
+          "url": "https://github.com/paritytech/polkadot-sdk/commit/4cd07c56378291fddb9fceab3b508cf99034126a"
+        },
+        "date": 1738577574008,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Received from peers",
+            "value": 307203,
+            "unit": "KiB"
+          },
+          {
+            "name": "Sent to peers",
+            "value": 1.6666666666666665,
+            "unit": "KiB"
+          },
+          {
+            "name": "test-environment",
+            "value": 0.19464862500000002,
+            "unit": "seconds"
+          },
+          {
+            "name": "availability-recovery",
+            "value": 11.518615137533333,
             "unit": "seconds"
           }
         ]
