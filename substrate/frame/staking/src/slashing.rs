@@ -436,7 +436,7 @@ pub(crate) fn process_offence<T: Config>() {
 			offence_record.reported_era,
 			slash_era,
 		);
-		UnappliedSlashes::<T>::insert(slash_era, (offender, slash_page), unapplied);
+		UnappliedSlashes::<T>::insert(slash_era, (offender, offence_record.slash_fraction, slash_page), unapplied);
 	}
 }
 

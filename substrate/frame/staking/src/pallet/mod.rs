@@ -728,7 +728,7 @@ pub mod pallet {
 		Twox64Concat,
 		EraIndex,
 		Twox64Concat,
-		(T::AccountId, u32), // Second key: (Validator, Page Index)
+		(T::AccountId, Perbill, u32), // Second key: (Validator, slash_fraction, Page Index)
 		UnappliedSlash<T>,
 		OptionQuery,
 	>;

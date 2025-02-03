@@ -723,10 +723,17 @@ pub(crate) fn on_offence_in_era(
 	slash_fraction: &[Perbill],
 	era: EraIndex,
 ) {
+	// counter to keep track of how many blocks we need to advance to process all the offences.
+	let mut process_blocks = 0u32;
+	for detail in offenders {
+		process_blocks += EraInfo::<Test>::get_page_count(era, &detail.offender);
+	}
+
 	let bonded_eras = crate::BondedEras::<Test>::get();
 	for &(bonded_era, start_session) in bonded_eras.iter() {
 		if bonded_era == era {
 			let _ = Staking::on_offence(offenders, slash_fraction, start_session);
+			advance_blocks(process_blocks as u64);
 			return
 		} else if bonded_era > era {
 			break
@@ -739,6 +746,7 @@ pub(crate) fn on_offence_in_era(
 			slash_fraction,
 			pallet_staking::ErasStartSessionIndex::<Test>::get(era).unwrap(),
 		);
+		advance_blocks(process_blocks as u64);
 	} else {
 		panic!("cannot slash in era {}", era);
 	}
@@ -749,7 +757,7 @@ pub(crate) fn on_offence_now(
 	slash_fraction: &[Perbill],
 ) {
 	let now = pallet_staking::ActiveEra::<Test>::get().unwrap().index;
-	on_offence_in_era(offenders, slash_fraction, now)
+	on_offence_in_era(offenders, slash_fraction, now);
 }
 
 pub(crate) fn add_slash(who: &AccountId) {
