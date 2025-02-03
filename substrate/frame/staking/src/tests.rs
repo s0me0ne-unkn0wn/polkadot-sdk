@@ -2584,7 +2584,7 @@ fn slashing_performed_according_exposure() {
 		);
 
 		// The stash account should be slashed for 250 (50% of 500).
-		assert_eq!(asset::stakeable_balance::<Test>(&11), 1000/2);
+		assert_eq!(asset::stakeable_balance::<Test>(&11), 1000 / 2);
 	});
 }
 
@@ -2648,8 +2648,8 @@ fn validator_is_not_disabled_for_an_offence_in_previous_era() {
 
 #[test]
 fn only_first_reporter_receive_the_slice() {
-	// This test verifies that the first reporter of the offence receive their slice from the slashed
-	// amount.
+	// This test verifies that the first reporter of the offence receive their slice from the
+	// slashed amount.
 	ExtBuilder::default().build_and_execute(|| {
 		// The reporters' reward is calculated from the total exposure.
 		let initial_balance = 1125;
@@ -8663,14 +8663,13 @@ fn do_not_reenable_higher_offenders_mock() {
 
 			// offence with a major slash
 			on_offence_now(
-				&[OffenceDetails { offender: 11, reporters: vec![] },
+				&[
+					OffenceDetails { offender: 11, reporters: vec![] },
 					OffenceDetails { offender: 21, reporters: vec![] },
-					OffenceDetails { offender: 31, reporters: vec![] }
+					OffenceDetails { offender: 31, reporters: vec![] },
 				],
-				&[Perbill::from_percent(50),
-					Perbill::from_percent(50),
-					Perbill::from_percent(10)]);
-
+				&[Perbill::from_percent(50), Perbill::from_percent(50), Perbill::from_percent(10)],
+			);
 
 			// both validators should be disabled
 			assert!(is_disabled(11));
@@ -8709,7 +8708,6 @@ fn do_not_reenable_higher_offenders_mock() {
 					Event::SlashComputed { offence_era: 1, slash_era: 1, offender: 11, page: 0 },
 					Event::Slashed { staker: 11, amount: 500 },
 					Event::Slashed { staker: 101, amount: 62 },
-
 				]
 			);
 		});
