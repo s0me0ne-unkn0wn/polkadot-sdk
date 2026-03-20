@@ -11,6 +11,9 @@ CXX_x86_64_unknown_linux_musl = { value = ".cargo/musl-g++", force = true, relat
 CARGO_WORKSPACE_ROOT_DIR = { value = "", relative = true }
 SQLX_OFFLINE = "true"
 
+[target.riscv64gc-unknown-linux-gnu]
+linker = "riscv64-linux-gnu-gcc"
+
 [net]
 retry = 5
 # git-fetch-with-cli = true # commented because there is a risk that a runner can be banned by github

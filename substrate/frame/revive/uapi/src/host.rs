@@ -13,7 +13,7 @@
 // limitations under the License.
 use crate::{CallFlags, Result, ReturnFlags, StorageFlags};
 
-#[cfg(target_arch = "riscv64")]
+#[cfg(all(target_arch = "riscv64", substrate_runtime))]
 mod riscv64;
 
 /// Implements [`HostFn`] when compiled on supported architectures (RISC-V).

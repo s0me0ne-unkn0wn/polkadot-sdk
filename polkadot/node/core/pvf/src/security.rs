@@ -144,8 +144,18 @@ impl SecureModeError {
 			CannotEnableLandlock { .. } => {
 				security_status.can_unshare_user_namespace_and_change_root
 			},
-			// seccomp should be present on all modern Linuxes unless it's been disabled.
-			CannotEnableSeccomp(_) => false,
+			// seccomp is currently only supported on x86_64. On other architectures
+			// (e.g. aarch64, riscv64) it is not available, so we allow secure mode
+			// without it as long as filesystem sandboxing (landlock or change_root) is
+			// in place. On x86_64 it remains mandatory.
+			CannotEnableSeccomp(_) => {
+				if cfg!(target_arch = "x86_64") {
+					false
+				} else {
+					security_status.can_enable_landlock ||
+						security_status.can_unshare_user_namespace_and_change_root
+				}
+			},
 			// Should always be present on modern Linuxes. If not, Landlock also provides FS
 			// sandboxing, so don't enforce this.
 			CannotUnshareUserNamespaceAndChangeRoot(_) => security_status.can_enable_landlock,

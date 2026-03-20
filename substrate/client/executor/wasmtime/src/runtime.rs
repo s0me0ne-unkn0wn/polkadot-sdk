@@ -43,6 +43,13 @@ use std::{
 };
 use wasmtime::{AsContext, Cache, CacheConfig, Engine, Memory};
 
+// On riscv64 with SV39 the user virtual address space is only 256 GiB.
+// Each pooling slot reserves ~4.3 GiB of VA (4 GiB memory + guard pages),
+// so 64 slots would require ~277 GiB which exceeds the SV39 limit.
+// 32 slots (~138 GiB) fit comfortably.
+#[cfg(target_arch = "riscv64")]
+const MAX_INSTANCE_COUNT: u32 = 32;
+#[cfg(not(target_arch = "riscv64"))]
 const MAX_INSTANCE_COUNT: u32 = 64;
 
 #[derive(Default)]
@@ -219,6 +226,14 @@ fn common_config(semantics: &Semantics) -> std::result::Result<wasmtime::Config,
 	let mut config = wasmtime::Config::new();
 	config.cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize);
 	config.cranelift_nan_canonicalization(semantics.canonicalize_nans);
+
+	// Workaround https://github.com/bytecodealliance/wasmtime/issues/12811
+	#[cfg(target_arch = "riscv64")]
+	unsafe {
+		config.cranelift_flag_set("has_zca", "false");
+		config.cranelift_flag_set("has_zcd", "false");
+		config.cranelift_flag_set("has_zcb", "false");
+	}
 
 	let profiler = match std::env::var_os("WASMTIME_PROFILING_STRATEGY") {
 		Some(os_string) if os_string == "jitdump" => wasmtime::ProfilingStrategy::JitDump,
