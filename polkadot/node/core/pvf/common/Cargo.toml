@@ -36,6 +36,9 @@ sp-externalities = { workspace = true, default-features = true }
 sp-io = { workspace = true, default-features = true }
 sp-tracing = { workspace = true, default-features = true }
 
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+sc-executor-native-riscv = { workspace = true, default-features = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = { workspace = true }
 

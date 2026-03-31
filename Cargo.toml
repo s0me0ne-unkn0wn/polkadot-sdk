@@ -274,6 +274,7 @@ members = [
 	"substrate/client/db",
 	"substrate/client/executor",
 	"substrate/client/executor/common",
+	"substrate/client/executor/native-riscv",
 	"substrate/client/executor/polkavm",
 	"substrate/client/executor/runtime-test",
 	"substrate/client/executor/wasmtime",
@@ -1251,6 +1252,7 @@ sc-consensus-pow = { path = "substrate/client/consensus/pow", default-features =
 sc-consensus-slots = { path = "substrate/client/consensus/slots", default-features = false }
 sc-executor = { path = "substrate/client/executor", default-features = false }
 sc-executor-common = { path = "substrate/client/executor/common", default-features = false }
+sc-executor-native-riscv = { path = "substrate/client/executor/native-riscv", default-features = false }
 sc-executor-polkavm = { path = "substrate/client/executor/polkavm", default-features = false }
 sc-executor-wasmtime = { path = "substrate/client/executor/wasmtime", default-features = false }
 sc-informant = { path = "substrate/client/informant", default-features = false }

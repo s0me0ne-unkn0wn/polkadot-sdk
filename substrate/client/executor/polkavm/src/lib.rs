@@ -215,12 +215,6 @@ fn call_host_function(
 		}
 	}
 
-	log::trace!(
-		"Calling host function: '{}', args = {:?}",
-		function.name(),
-		&args[..function.signature().args.len()]
-	);
-
 	let value = match function
 		.execute(&mut Context(caller), &mut args.into_iter().take(function.signature().args.len()))
 	{
@@ -297,8 +291,12 @@ where
 	linker.define_untyped("grow_heap", |caller: Caller<ContextState>| {
 		let size = caller.instance.reg(Reg::A0) as u32;
 		match caller.instance.sbrk(size) {
-			Ok(Some(ptr)) => caller.instance.set_reg(Reg::A0, ptr as u64),
-			Ok(None) => caller.instance.set_reg(Reg::A0, 0),
+			Ok(Some(ptr)) => {
+				caller.instance.set_reg(Reg::A0, ptr as u64);
+			},
+			Ok(None) => {
+				caller.instance.set_reg(Reg::A0, 0);
+			},
 			Err(e) => return Err(e.to_string()),
 		}
 		Ok(())

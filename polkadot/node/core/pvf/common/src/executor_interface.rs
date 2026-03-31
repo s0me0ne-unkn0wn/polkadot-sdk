@@ -138,12 +138,24 @@ pub fn execute_pvm(
 	match sc_executor::with_externalities_safe(&mut ext, || {
 		let blob = RuntimeBlob::new(code)?;
 		// TODO: Executor params
-		let runtime = sc_executor_polkavm::create_runtime::<HostFunctions>(
-			blob.as_polkavm_blob()
-				.ok_or(ExecuteError::Other("PVM blob creation failure".to_owned()))?,
-		)?;
+		let pvm_blob = blob
+			.as_polkavm_blob()
+			.ok_or(ExecuteError::Other("PVM blob creation failure".to_owned()))?;
 
-		runtime.new_instance()?.call("validate_block", params)
+		#[cfg(target_arch = "riscv64")]
+		{
+			// Native-only execution (comparison mode disabled)
+			let native_runtime =
+				sc_executor_native_riscv::create_runtime::<HostFunctions>(pvm_blob)?;
+			native_runtime
+				.new_instance()?
+				.call("validate_block", params)
+		}
+		#[cfg(not(target_arch = "riscv64"))]
+		{
+			let runtime = sc_executor_polkavm::create_runtime::<HostFunctions>(pvm_blob)?;
+			runtime.new_instance()?.call("validate_block", params)
+		}
 	}) {
 		Ok(Ok(ok)) => Ok(ok),
 		Ok(Err(err)) | Err(err) => Err(err),

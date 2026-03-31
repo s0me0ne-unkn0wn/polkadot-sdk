@@ -15824,6 +15824,7 @@ dependencies = [
  "polkadot-primitives",
  "sc-executor 0.32.0",
  "sc-executor-common 0.29.0",
+ "sc-executor-native-riscv",
  "sc-executor-polkavm 0.29.0",
  "sc-executor-wasmtime 0.29.0",
  "seccompiler",
@@ -20466,6 +20467,18 @@ dependencies = [
  "sp-wasm-interface 24.0.0",
  "thiserror 1.0.65",
  "wasm-instrument",
+]
+
+[[package]]
+name = "sc-executor-native-riscv"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "log",
+ "polkavm-common 0.31.0",
+ "sc-executor-common 0.29.0",
+ "sp-runtime-interface 24.0.0",
+ "sp-wasm-interface 20.0.0",
 ]
 
 [[package]]
