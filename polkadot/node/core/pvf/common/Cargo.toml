@@ -27,7 +27,6 @@ polkadot-primitives = { workspace = true, default-features = true }
 
 sc-executor = { workspace = true, default-features = true }
 sc-executor-common = { workspace = true, default-features = true }
-sc-executor-polkavm = { workspace = true, default-features = true }
 sc-executor-wasmtime = { workspace = true, default-features = true }
 
 sp-core = { workspace = true, default-features = true }
@@ -35,6 +34,9 @@ sp-crypto-hashing = { workspace = true, default-features = true }
 sp-externalities = { workspace = true, default-features = true }
 sp-io = { workspace = true, default-features = true }
 sp-tracing = { workspace = true, default-features = true }
+
+[target.'cfg(not(target_arch = "riscv64"))'.dependencies]
+sc-executor-polkavm = { workspace = true, default-features = true }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sc-executor-native-riscv = { workspace = true, default-features = true }
