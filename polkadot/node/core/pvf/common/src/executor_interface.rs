@@ -120,8 +120,11 @@ pub unsafe fn execute_wasm(
 	let mut ext = prepare_externalities();
 
 	match sc_executor::with_externalities_safe(&mut ext, || {
+		let (semantics, _) = params_to_wasmtime_semantics(executor_params);
 		let runtime = create_runtime_from_artifact_bytes(code, executor_params)?;
-		runtime.new_instance()?.call("validate_block", params)
+		runtime
+			.new_instance(semantics.heap_alloc_strategy)?
+			.call("validate_block", params)
 	}) {
 		Ok(Ok(ok)) => Ok(ok),
 		Ok(Err(err)) | Err(err) => Err(err),
@@ -130,13 +133,14 @@ pub unsafe fn execute_wasm(
 
 pub fn execute_pvm(
 	code: &[u8],
-	_executor_params: &ExecutorParams,
+	executor_params: &ExecutorParams,
 	params: &[u8],
 ) -> Result<Vec<u8>, ExecuteError> {
 	let mut ext = prepare_externalities();
 
 	match sc_executor::with_externalities_safe(&mut ext, || {
 		let blob = RuntimeBlob::new(code)?;
+		let (semantics, _) = params_to_wasmtime_semantics(executor_params);
 		// TODO: Executor params
 		let pvm_blob = blob
 			.as_polkavm_blob()
@@ -148,13 +152,13 @@ pub fn execute_pvm(
 			let native_runtime =
 				sc_executor_native_riscv::create_runtime::<HostFunctions>(pvm_blob)?;
 			native_runtime
-				.new_instance()?
+				.new_instance(semantics.heap_alloc_strategy)?
 				.call("validate_block", params)
 		}
 		#[cfg(not(target_arch = "riscv64"))]
 		{
 			let runtime = sc_executor_polkavm::create_runtime::<HostFunctions>(pvm_blob)?;
-			runtime.new_instance()?.call("validate_block", params)
+			runtime.new_instance(semantics.heap_alloc_strategy)?.call("validate_block", params)
 		}
 	}) {
 		Ok(Ok(ok)) => Ok(ok),
@@ -178,10 +182,23 @@ pub unsafe fn create_runtime_from_artifact_bytes(
 	let mut config = DEFAULT_CONFIG.clone();
 	config.semantics = params_to_wasmtime_semantics(executor_params).0;
 
-	sc_executor_wasmtime::create_runtime_from_artifact_bytes::<HostFunctions>(
-		compiled_artifact_blob,
-		config,
-	)
+	let ecc_hf_enabled = executor_params.iter().any(|p| {
+		p == &ExecutorParam::EnabledHostFunction(
+			polkadot_primitives::ExecutorHostFunction::EccRfc163,
+		)
+	});
+
+	if ecc_hf_enabled {
+		sc_executor_wasmtime::create_runtime_from_artifact_bytes::<HostFunctionsWithEcc>(
+			compiled_artifact_blob,
+			config,
+		)
+	} else {
+		sc_executor_wasmtime::create_runtime_from_artifact_bytes::<HostFunctions>(
+			compiled_artifact_blob,
+			config,
+		)
+	}
 }
 
 /// Takes the default config and overwrites any settings with existing executor parameters.
@@ -206,7 +223,8 @@ pub fn params_to_wasmtime_semantics(par: &ExecutorParams) -> (Semantics, Determi
 			ExecutorParam::WasmExtBulkMemory => sem.wasm_bulk_memory = true,
 			ExecutorParam::PrecheckingMaxMemory(_) |
 			ExecutorParam::PvfPrepTimeout(_, _) |
-			ExecutorParam::PvfExecTimeout(_, _) => (), // Not used here
+			ExecutorParam::PvfExecTimeout(_, _) |
+			ExecutorParam::EnabledHostFunction(_) => (), // Not used here
 		}
 	}
 	sem.deterministic_stack_limit = Some(stack_limit.clone());
@@ -230,7 +248,7 @@ pub fn prepare(
 	if blob.as_polkavm_blob().is_some() {
 		// For PVM, actual compilation is done by execution worker for now, so just copy the blob
 		// over and pretend it's compiled
-		return Ok(blob.serialize())
+		return Ok(blob.serialize());
 	}
 	// if let Some(pvm_blob) = blob.as_polkavm_blob() {
 	// 	// For PVM, actual compilation is done by execution worker for now, so just copy the blob
@@ -257,6 +275,10 @@ type HostFunctions = (
 	sp_io::trie::HostFunctions,
 	sp_io::input::HostFunctions,
 );
+
+/// Host functions with ECC (elliptic curve cryptography) support.
+/// Only used when `ExecutorParam::EnabledHostFunction(ExecutorHostFunction::EccRfc163)` is present.
+type HostFunctionsWithEcc = (HostFunctions, sp_crypto_ec_utils::HostFunctionsRfc163);
 
 /// The validation externalities that will panic on any storage related access. (PVFs should not
 /// have a notion of a persistent storage/trie.)
@@ -454,6 +476,7 @@ mod tests {
 			PvfPrepTimeout(_, _) => true,
 			PvfExecTimeout(_, _) => true,
 			WasmExtBulkMemory => true,
+			EnabledHostFunction(_) => true,
 		};
 
 		// A minimal module with memory and an exported `validate_block` function.
@@ -532,6 +555,15 @@ mod tests {
 				"WasmExtBulkMemory",
 				base.clone(),
 				ExecutorParams::from(&[ExecutorParam::WasmExtBulkMemory][..]),
+			),
+			(
+				"EnabledHostFunction(EccRfc163)",
+				base.clone(),
+				ExecutorParams::from(
+					&[ExecutorParam::EnabledHostFunction(
+						polkadot_primitives::ExecutorHostFunction::EccRfc163,
+					)][..],
+				),
 			),
 		];
 

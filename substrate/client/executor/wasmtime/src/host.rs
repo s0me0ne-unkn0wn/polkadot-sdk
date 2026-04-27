@@ -19,12 +19,11 @@
 //! This module defines `HostState` and `HostContext` structs which provide logic and state
 //! required for execution of host.
 
-use wasmtime::Caller;
-
-use sc_allocator::{AllocationStats, FreeingBumpHeapAllocator};
-use sp_wasm_interface::{Pointer, WordSize};
-
 use crate::{instance_wrapper::MemoryWrapper, runtime::StoreData, util};
+use sc_allocator::{AllocationStats, FreeingBumpHeapAllocator};
+use sp_virtualization::VirtManager;
+use sp_wasm_interface::{Pointer, WordSize};
+use wasmtime::Caller;
 
 /// The state required to construct a HostContext context. The context only lasts for one host
 /// call, whereas the state is maintained for the duration of a Wasm runtime call, which may make
@@ -38,15 +37,18 @@ pub struct HostState {
 	pub(crate) allocator: Option<FreeingBumpHeapAllocator>,
 	panic_message: Option<String>,
 	pub(crate) input_data: Option<Vec<u8>>,
+	/// Manages virtualization instances spawned by the runtime.
+	virt_manager: VirtManager,
 }
 
 impl HostState {
 	/// Constructs a new `HostState`.
-	pub fn new(allocator: FreeingBumpHeapAllocator, input_data: impl AsRef<[u8]>) -> Self {
+	pub fn new(allocator: Option<FreeingBumpHeapAllocator>, input_data: impl AsRef<[u8]>) -> Self {
 		HostState {
-			allocator: Some(allocator),
+			allocator,
 			panic_message: None,
 			input_data: Some(input_data.as_ref().to_vec()),
+			virt_manager: VirtManager::default(),
 		}
 	}
 
@@ -56,9 +58,7 @@ impl HostState {
 	}
 
 	pub(crate) fn allocation_stats(&self) -> AllocationStats {
-		self.allocator.as_ref()
-			.expect("Allocator is always set and only unavailable when doing an allocation/deallocation; qed")
-			.stats()
+		self.allocator.as_ref().map(|a| a.stats()).unwrap_or_default()
 	}
 }
 
@@ -80,7 +80,7 @@ impl<'a> HostContext<'a> {
 
 impl<'a> sp_wasm_interface::FunctionContext for HostContext<'a> {
 	fn read_memory_into(
-		&self,
+		&mut self,
 		address: Pointer<u8>,
 		dest: &mut [u8],
 	) -> sp_wasm_interface::Result<()> {
@@ -93,11 +93,10 @@ impl<'a> sp_wasm_interface::FunctionContext for HostContext<'a> {
 
 	fn allocate_memory(&mut self, size: WordSize) -> sp_wasm_interface::Result<Pointer<u8>> {
 		let memory = self.caller.data().memory();
-		let mut allocator = self
-			.host_state_mut()
-			.allocator
-			.take()
-			.expect("allocator is not empty when calling a function in wasm; qed");
+		let mut allocator = self.host_state_mut().allocator.take().expect(
+			"host-side allocator is not available; this runtime uses runtime-side allocation \
+				 and must not call host functions that allocate guest memory; qed",
+		);
 
 		// We can not return on error early, as we need to store back allocator.
 		let res = allocator
@@ -111,11 +110,10 @@ impl<'a> sp_wasm_interface::FunctionContext for HostContext<'a> {
 
 	fn deallocate_memory(&mut self, ptr: Pointer<u8>) -> sp_wasm_interface::Result<()> {
 		let memory = self.caller.data().memory();
-		let mut allocator = self
-			.host_state_mut()
-			.allocator
-			.take()
-			.expect("allocator is not empty when calling a function in wasm; qed");
+		let mut allocator = self.host_state_mut().allocator.take().expect(
+			"host-side allocator is not available; this runtime uses runtime-side allocation \
+				 and must not call host functions that deallocate guest memory; qed",
+		);
 
 		// We can not return on error early, as we need to store back allocator.
 		let res = allocator
@@ -131,18 +129,14 @@ impl<'a> sp_wasm_interface::FunctionContext for HostContext<'a> {
 		self.host_state_mut().panic_message = Some(message.to_owned());
 	}
 
-	fn fill_input_data(
-		&mut self,
-		ptr: Pointer<u8>,
-		size: WordSize,
-	) -> sp_wasm_interface::Result<()> {
-		let input_data = self
-			.host_state_mut()
+	fn take_input_data(&mut self) -> sp_wasm_interface::Result<Vec<u8>> {
+		self.host_state_mut()
 			.input_data
 			.take()
-			.expect("input data is not empty when calling a function in wasm; qed");
-		assert_eq!(input_data.len(), size as usize, "input data length mismatch");
-		self.write_memory(ptr, &input_data[..])?;
-		Ok(())
+			.ok_or_else(|| "Input data already taken".into())
+	}
+
+	fn virtualization(&mut self) -> &mut dyn sp_wasm_interface::Virtualization {
+		&mut self.host_state_mut().virt_manager
 	}
 }

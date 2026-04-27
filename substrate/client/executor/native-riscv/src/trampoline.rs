@@ -195,7 +195,7 @@ struct NativeFunctionContext<'a> {
 
 impl<'a> FunctionContext for NativeFunctionContext<'a> {
 	fn read_memory_into(
-		&self,
+		&mut self,
 		address: Pointer<u8>,
 		dest: &mut [u8],
 	) -> sp_wasm_interface::Result<()> {
@@ -223,19 +223,14 @@ impl<'a> FunctionContext for NativeFunctionContext<'a> {
 		unimplemented!()
 	}
 
-	fn fill_input_data(
-		&mut self,
-		ptr: Pointer<u8>,
-		size: WordSize,
-	) -> sp_wasm_interface::Result<()> {
-		let input_data = self
-			.input_data
+	fn take_input_data(&mut self) -> sp_wasm_interface::Result<Vec<u8>> {
+		self.input_data
 			.take()
-			.expect("input data is not empty during runtime API call; qed");
-		assert_eq!(input_data.len(), size as usize, "input data length mismatch");
-		self.memory
-			.write(u32::from(ptr), &input_data)
-			.map_err(|e| e.to_string())
+			.ok_or_else(|| "Input data already taken".into())
+	}
+
+	fn virtualization(&mut self) -> &mut dyn sp_wasm_interface::Virtualization {
+		todo!("Implement virtualization for native RISC-V")
 	}
 }
 

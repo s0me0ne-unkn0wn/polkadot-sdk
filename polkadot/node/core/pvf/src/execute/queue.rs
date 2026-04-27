@@ -257,7 +257,8 @@ impl Queue {
 			if let Some(finished_worker) = finished_worker {
 				if let Some(worker_data) = self.workers.running.get(finished_worker) {
 					for (i, job) in queue.iter().enumerate() {
-						if worker_data.executor_params_hash == job.validation_context.executor_params.hash() &&
+						if worker_data.executor_params_hash ==
+							job.validation_context.executor_params.hash() &&
 							worker_data.worker_kind == job.executable.worker_kind()
 						{
 							(worker, job_index) = (Some(finished_worker), i);
@@ -270,9 +271,10 @@ impl Queue {
 
 		if worker.is_none() {
 			// Try to obtain a worker for the job
-			worker = self
-				.workers
-				.find_available(queue[job_index].validation_context.executor_params.hash(), queue[job_index].executable.worker_kind());
+			worker = self.workers.find_available(
+				queue[job_index].validation_context.executor_params.hash(),
+				queue[job_index].executable.worker_kind(),
+			);
 		}
 
 		if worker.is_none() {
@@ -326,12 +328,12 @@ impl Queue {
 				.iter()
 				.enumerate()
 				.filter_map(|(index, job)| {
-					let relay_parent = match job.exec_kind {
+					let scheduling_parent = match job.exec_kind {
 						PvfExecKind::Backing(x) | PvfExecKind::BackingSystemParas(x) => x,
 						_ => return None,
 					};
 					let in_active_fork = self.active_leaves.iter().any(|(hash, ancestors)| {
-						*hash == relay_parent || ancestors.contains(&relay_parent)
+						*hash == scheduling_parent || ancestors.contains(&scheduling_parent)
 					});
 					if in_active_fork {
 						None
@@ -946,7 +948,9 @@ mod tests {
 	use polkadot_node_core_pvf_common::execute::ValidationContext;
 	use polkadot_node_primitives::{BlockData, PoV};
 	use polkadot_node_subsystem_test_helpers::mock::new_leaf;
-	use polkadot_primitives::{ExecutorParams, PersistedValidationData};
+	use polkadot_primitives::{
+		CandidateReceiptV2 as CandidateReceipt, ExecutorParams, PersistedValidationData,
+	};
 	use polkadot_primitives_test_helpers::dummy_candidate_receipt;
 	use sp_core::H256;
 	use std::sync::Arc;
@@ -965,13 +969,14 @@ mod tests {
 		let pov = Arc::new(PoV { block_data: BlockData(b"pov".to_vec()) });
 		let candidate_receipt = dummy_candidate_receipt(H256::default());
 
+		let candidate_receipt: CandidateReceipt = candidate_receipt.into();
 		let validation_context = ValidationContext {
-			candidate_receipt: candidate_receipt.into(),
+			candidate_receipt,
 			pvd,
 			pov,
 			executor_params: ExecutorParams::default(),
 			exec_timeout: Duration::from_secs(10),
-			v3_enabled: false,
+			v3_seen: false,
 		};
 
 		ExecuteJob {
@@ -1136,13 +1141,15 @@ mod tests {
 		assert_eq!(queue.unscheduled.unscheduled.values().map(|x| x.len()).sum::<usize>(), 0);
 		let mut result_rxs = vec![];
 		let (result_tx, _result_rx) = oneshot::channel();
+		let relevant_candidate: CandidateReceipt =
+			dummy_candidate_receipt(relevant_relay_parent).into();
 		let relevant_validation_context = ValidationContext {
-			candidate_receipt: dummy_candidate_receipt(relevant_relay_parent).into(),
+			candidate_receipt: relevant_candidate,
 			pvd: Arc::new(PersistedValidationData::default()),
 			pov: Arc::new(PoV { block_data: BlockData(Vec::new()) }),
 			executor_params: ExecutorParams::default(),
 			exec_timeout: Duration::from_secs(1),
-			v3_enabled: false,
+			v3_seen: false,
 		};
 		let relevant_job = ExecuteJob {
 			executable: Executable::default(),
@@ -1155,13 +1162,15 @@ mod tests {
 		queue.unscheduled.add(relevant_job, Priority::Backing);
 		for _ in 0..10 {
 			let (result_tx, result_rx) = oneshot::channel();
+			let expired_candidate: CandidateReceipt =
+				dummy_candidate_receipt(old_relay_parent).into();
 			let expired_validation_context = ValidationContext {
-				candidate_receipt: dummy_candidate_receipt(old_relay_parent).into(),
+				candidate_receipt: expired_candidate,
 				pvd: Arc::new(PersistedValidationData::default()),
 				pov: Arc::new(PoV { block_data: BlockData(Vec::new()) }),
 				executor_params: ExecutorParams::default(),
 				exec_timeout: Duration::from_secs(1),
-				v3_enabled: false,
+				v3_seen: false,
 			};
 			let expired_job = ExecuteJob {
 				executable: Executable::default(),

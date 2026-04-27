@@ -24,7 +24,7 @@ use memory::{ExecutableBuffer, GuestMemory};
 use polkavm_common::abi::{MemoryMapBuilder, VM_MAX_PAGE_SIZE};
 use sc_executor_common::{
 	error::{Error, WasmError},
-	wasm_runtime::{AllocationStats, WasmInstance, WasmModule},
+	wasm_runtime::{AllocationStats, HeapAllocStrategy, WasmInstance, WasmModule},
 };
 use sp_runtime_interface::unpack_ptr_and_len;
 use sp_wasm_interface::{Function, HostFunctions};
@@ -77,7 +77,7 @@ pub struct NativeRiscvModule {
 }
 
 impl WasmModule for NativeRiscvModule {
-	fn new_instance(&self) -> Result<Box<dyn WasmInstance>, Error> {
+	fn new_instance(&self, _heap_alloc_strategy: HeapAllocStrategy) -> Result<Box<dyn WasmInstance>, Error> {
 		// Allocate guest address space
 		let mut guest_memory = GuestMemory::new(GUEST_ADDR_SPACE)?;
 

@@ -31,7 +31,10 @@ pub enum CallContext {
 	/// The call is happening in some offchain context.
 	Offchain,
 	/// The call is happening in some on-chain context like building or importing a block.
-	Onchain,
+	Onchain {
+		/// `true` when the call is part of block import pipeline.
+		import: bool,
+	},
 }
 
 /// Code execution engine.
@@ -174,6 +177,11 @@ impl ReadRuntimeVersionExt {
 	pub fn new<T: ReadRuntimeVersion + 'static>(inner: T) -> Self {
 		Self(Box::new(inner))
 	}
+}
+
+sp_externalities::decl_extension! {
+	/// Exposes the state version of the currently-loaded runtime to host functions.
+	pub struct RuntimeStateVersionExt(sp_storage::StateVersion);
 }
 
 /// Something that can spawn tasks (blocking and non-blocking) with an assigned name

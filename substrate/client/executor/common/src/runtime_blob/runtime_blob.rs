@@ -39,9 +39,9 @@ impl RuntimeBlob {
 	///
 	/// See [`sp_maybe_compressed_blob`] for details about decompression.
 	pub fn uncompress_if_needed(blob: &[u8]) -> Result<Self, WasmError> {
-		let blob_type = blob_type(blob).map_err(|_| WasmError::InvalidModule)?;
+		let blob_type = blob_type(blob).map_err(|e| WasmError::InvalidModule(e.to_string()))?;
 		if !blob_type.is_code() {
-			return Err(WasmError::InvalidModule);
+			return Err(WasmError::InvalidModule("Blob is not code".to_owned()));
 		}
 		let code = decompress_as(blob_type, blob, CODE_BLOB_BOMB_LIMIT)
 			.map_err(|e| WasmError::Other(format!("Decompression error: {:?}", e)))?;
@@ -145,12 +145,28 @@ impl RuntimeBlob {
 		Ok(())
 	}
 
+	/// Removes the maximum page limit from the memory section.
+	///
+	/// Only valid for WASM programs; will return an error if the blob is a PolkaVM program.
+	pub fn clear_memory_max_limit(&mut self) -> Result<(), WasmError> {
+		let raw_module = self.as_webassembly_blob_mut()?;
+		let memory_section = match raw_module.memory_section_mut() {
+			Some(section) => section,
+			None => return Ok(()),
+		};
+		for memory_ty in memory_section.entries_mut() {
+			*memory_ty = MemoryType::new(memory_ty.limits().initial(), None);
+		}
+		Ok(())
+	}
+
 	/// Modifies the blob's memory section according to the given `heap_alloc_strategy`.
 	///
 	/// Will return an error in case there is no memory section present,
 	/// or if the memory section is empty.
 	///
 	/// Only valid for WASM programs; will return an error if the blob is a PolkaVM program.
+	#[deprecated]
 	pub fn setup_memory_according_to_heap_alloc_strategy(
 		&mut self,
 		heap_alloc_strategy: HeapAllocStrategy,
